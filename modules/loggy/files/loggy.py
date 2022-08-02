@@ -50,7 +50,7 @@ if osname == "linux":
 elif osname == "freebsd":
     from watchdog.observers import Observer
     from watchdog.events import PatternMatchingEventHandler
-    
+
 # ElasticSearch
 from elasticsearch import Elasticsearch, helpers
 
@@ -74,7 +74,7 @@ def l2fp(txt):
 
 es = None
 hostname = socket.getfqdn()
-syslog.syslog(syslog.LOG_INFO, "Using %s as node name" % hostname)
+syslog.syslog(syslog.LOG_INFO, f"Using {hostname} as node name")
 
 RSA_KEY = '/etc/ssh/ssh_host_rsa_key.pub'
 FINGERPRINT = ''
@@ -84,7 +84,7 @@ try:
 #     RSA_KEY_MTIME = os.path.getmtime(RSA_KEY)
     with open(RSA_KEY, 'r') as rsa:
         FINGERPRINT, FINGERPRINT_SHA = l2fp(rsa.read())
-    syslog.syslog(syslog.LOG_INFO, "Identifying as %s" % FINGERPRINT)
+    syslog.syslog(syslog.LOG_INFO, f"Identifying as {FINGERPRINT}")
 except:
     pass
 
@@ -259,34 +259,34 @@ class Daemonize:
 		self.run(args)
 
 	def stop(self):
-		"""Stop the daemon."""
+	    """Stop the daemon."""
 
-		# Get the pid from the pidfile
-		try:
-			with open(self.pidfile,'r') as pf:
-				pid = int(pf.read().strip())
-		except IOError:
-			pid = None
-	
-		if not pid:
-			message = "pidfile {0} does not exist. " + \
-					"Daemon not running?\n"
-			sys.stderr.write(message.format(self.pidfile))
-			return # not an error in a restart
+	    # Get the pid from the pidfile
+	    try:
+	    	with open(self.pidfile,'r') as pf:
+	    		pid = int(pf.read().strip())
+	    except IOError:
+	    	pid = None
 
-		# Try killing the daemon process	
-		try:
-			while 1:
-				os.kill(pid, signal.SIGTERM)
-				time.sleep(0.1)
-		except OSError as err:
-			e = str(err.args)
-			if e.find("No such process") > 0:
-				if os.path.exists(self.pidfile):
-					os.remove(self.pidfile)
-			else:
-				print (str(err.args))
-				sys.exit(1)
+	    if not pid:
+	    	message = "pidfile {0} does not exist. " + \
+	    				"Daemon not running?\n"
+	    	sys.stderr.write(message.format(self.pidfile))
+	    	return # not an error in a restart
+
+	    	# Try killing the daemon process	
+	    try:
+	        while 1:
+	        	os.kill(pid, signal.SIGTERM)
+	        	time.sleep(0.1)
+	    except OSError as err:
+	        e = str(err.args)
+	        if e.find("No such process") > 0:
+	            if os.path.exists(self.pidfile):
+	            	os.remove(self.pidfile)
+	        else:
+	            print(err.args)
+	            sys.exit(1)
 
 	def restart(self):
 		"""Restart the daemon."""
@@ -324,7 +324,7 @@ class NodeThread(Thread):
         #print("Pushing %u json objects" % len(json_pending))
         iname = time.strftime("loggy-%Y.%m.%d")
         sys.stderr.flush()
-        if not iname in gotindex:
+        if iname not in gotindex:
             gotindex[iname] = True
             if not self.xes.indices.exists(index=iname):
                 mappings = {}
@@ -343,7 +343,7 @@ class NodeThread(Thread):
                         x = field.strip()
                         js['properties'][x] = {"store": True, "type": "string", "index": "not_analyzed", "fields": { "keyword": { "type": "keyword" }}}
                     mappings[entry] = js
-                    
+
                 res = self.xes.indices.create(index = iname, ignore=400, body = {
                         "settings" : {
                             "index.mapping.ignore_malformed": True,
@@ -353,7 +353,7 @@ class NodeThread(Thread):
                         "mappings" : mappings
                     }
                 )
-                if not 'loggy-indices' in json_pending:
+                if 'loggy-indices' not in json_pending:
                     json_pending['loggy-indices'] = []
                     last_push['loggy-indices'] = time.time()
                 json_pending['loggy-indices'].append({
@@ -364,7 +364,7 @@ class NodeThread(Thread):
                     'res': res,
                     'mappings': mappings
                     })
-            
+
         js_arr = []
         for entry in self.json:
             js = entry
@@ -392,13 +392,14 @@ class NodeThread(Thread):
                     js['bytes'] = 0
             if mytags:
                 js['@tags'] = mytags
-            if 'request' in js and not 'url' in js:
-                match = re.match(r"(GET|POST)\s+(.+)\s+HTTP/.+", js['request'])
-                if match:
-                    js['url'] = match.group(2)
+            if 'request' in js and 'url' not in js:
+                if match := re.match(
+                    r"(GET|POST)\s+(.+)\s+HTTP/.+", js['request']
+                ):
+                    js['url'] = match[2]
             if 'bytes' in js and isinstance(js['bytes'], basestring) and js['bytes'].isdigit():
                 js['bytes_int'] = int(js['bytes'])
-            
+
             js_arr.append({
                 '_op_type': 'index',
                 '_index': iname,
@@ -406,8 +407,8 @@ class NodeThread(Thread):
                 'doc': js,
                 '_source': js
             })
-            
-        if len(js_arr) > 0:
+
+        if js_arr:
             #es.bulk(index=iname, doc_type=self.logtype, body = js_arr )
             helpers.bulk(self.xes, js_arr)
         #except Exception as err:
@@ -417,12 +418,27 @@ class NodeThread(Thread):
 def connect_es(config):
     esa = []
     for w in ['Primary', 'Backup']:
-        if config.has_section("ElasticSearch:" + w):
-            h = config.get("ElasticSearch:" + w, "host")
-            p = int(config.get("ElasticSearch:" + w, "port")) if config.has_option("ElasticSearch:" + w, "port") else 9200
-            s = config.get("ElasticSearch:" + w, "ssl") if config.has_option("ElasticSearch:" + w, "ssl") else ""
-            s = True if s == 'true' else False
-            u = config.get("ElasticSearch:" + w, "prefix") if config.has_option("ElasticSearch:" + w, "prefix") else ""
+        if config.has_section(f"ElasticSearch:{w}"):
+            h = config.get(f"ElasticSearch:{w}", "host")
+            p = (
+                int(config.get(f"ElasticSearch:{w}", "port"))
+                if config.has_option(f"ElasticSearch:{w}", "port")
+                else 9200
+            )
+
+            s = (
+                config.get(f"ElasticSearch:{w}", "ssl")
+                if config.has_option(f"ElasticSearch:{w}", "ssl")
+                else ""
+            )
+
+            s = s == 'true'
+            u = (
+                config.get(f"ElasticSearch:{w}", "prefix")
+                if config.has_option(f"ElasticSearch:{w}", "prefix")
+                else ""
+            )
+
             esa.append({
                 'host': h,
                 'port': p,
@@ -430,31 +446,24 @@ def connect_es(config):
                 'url_prefix': u
             })
             print("Using http%s://%s:%u/%s as %s" % ("s" if s else "", h, p, u, w))
-        
-    esx = Elasticsearch(
-        esa,
-        max_retries=5,
-        retry_on_timeout=True
-    )
-    return esx
+
+    return Elasticsearch(esa, max_retries=5, retry_on_timeout=True)
 
 
 def parseLine(path, data):
     global json_pending, config
     for line in (l.rstrip() for l in data.split("\n")):
-        m = re.match(r"^<%JSON:([^>%]+)%>\s*(.+)", line)
-        if m:
+        if m := re.match(r"^<%JSON:([^>%]+)%>\s*(.+)", line):
             try:
                 # Try normally
                 try:
-                    js = json.loads(m.group(2))
-                # In case \x[..] has been used, try again!    
+                    js = json.loads(m[2])
                 except:
-                    js = json.loads(re.sub(r"\\x..", "?", m.group(2)))
+                    js = json.loads(re.sub(r"\\x..", "?", m[2]))
                 js['filepath'] = path
                 js['timestamp'] = time.time()
-                js['logtype'] = m.group(1)
-                if not js['logtype'] in json_pending:
+                js['logtype'] = m[1]
+                if js['logtype'] not in json_pending:
                     json_pending[js['logtype']] = []
                     last_push[js['logtype']] = time.time()
                     print("got our first valid json as " + js['logtype'] + "!")
@@ -463,14 +472,13 @@ def parseLine(path, data):
                 pass
         else:
             for r in regexes:
-                match = regexes[r].match(line)
-                if match:
-                    if not r == 'apache_access':
-                        print("Found a " + r + " match")
+                if match := regexes[r].match(line):
+                    if r != 'apache_access':
+                        print(f"Found a {r} match")
                     js = tuples[r]( filepath=path, logtype=r, timestamp = time.time() , **match.groupdict())
                     json_pending[r].append(js._asdict())
-                    if not r == 'apache_access':
-                        print("Appended a " + r + " match")
+                    if r != 'apache_access':
+                        print(f"Appended a {r} match")
                     break
 
 if osname == "freebsd":
@@ -487,13 +495,17 @@ if osname == "freebsd":
                 del filehandles[path]
                 inode = inodes_path[path]
                 del inodes[inode]
-    
-            elif (event.event_type == 'modified' or event.event_type == 'created') and (path.find(".gz") == -1) and not path in filehandles:
+
+            elif (
+                event.event_type in ['modified', 'created']
+                and path.find(".gz") == -1
+                and path not in filehandles
+            ):
                 try:
                     idata = os.stat(path)
                     inode = idata.st_ino
-                    if not inode in inodes:
-                        print("Opening: " + path)
+                    if inode not in inodes:
+                        print(f"Opening: {path}")
                         filehandles[path] = open(path, "r")
                         print("Started watching %s (%u)" % (path, inode))
                         filehandles[path].seek(0,2)
@@ -503,34 +515,28 @@ if osname == "freebsd":
                 except Exception as err:
                     print(err)
             elif event.event_type == 'modified' and path in filehandles:
-                print(path + " was modified")
+                print(f"{path} was modified")
                 rd = 0
                 data = ""
                 #print("Change in " + path)
                 try:
-                    while True:
-                        line = filehandles[path].readline()
-                        if not line:
-                            #filehandles[path].seek(0,2)
-                            break
-                        else:
-                            rd += len(line)
-                            data += line
+                    while line := filehandles[path].readline():
+                        rd += len(line)
+                        data += line
                     #print("Read %u bytes from %s" % (rd, path))
                     parseLine(path, data)
                 except Exception as err:
                     try:
-                        print("Could not utilize " + path + ", closing.." + err)
+                        print(f"Could not utilize {path}, closing..{err}")
                         filehandles[path].close()
                     except Exception as err:
                         print(err)
                     del filehandles[path]
                     inode = inodes_path[path]
                     del inodes[inode]
-          # File deleted? (close handle)
             elif event.event_type == 'deleted':
                 if path in filehandles:
-                    print("Closed " + path)
+                    print(f"Closed {path}")
                     try:
                         filehandles[path].close()
                     except Exception as err:
@@ -538,7 +544,7 @@ if osname == "freebsd":
                     del filehandles[path]
                     inode = inodes_path[path]
                     del inodes[inode]
-                    print("Stopped watching " + path)
+                    print(f"Stopped watching {path}")
                     
             
         def on_modified(self, event):

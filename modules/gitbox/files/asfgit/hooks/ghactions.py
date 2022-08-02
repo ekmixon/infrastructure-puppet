@@ -60,7 +60,10 @@ def get_yaml(filename, refname):
     """ Fetch a yaml file from a specific branch, return its contents to caller as parsed object"""
     try:
         devnull = open(os.devnull, "w")
-        fdata = subprocess.check_output(("/usr/bin/git", "show", "%s:%s" % (refname, filename)), stderr=devnull)
+        fdata = subprocess.check_output(
+            ("/usr/bin/git", "show", f"{refname}:{filename}"), stderr=devnull
+        )
+
     except subprocess.CalledProcessError as e:  # Git show failure, no such file/branch
         fdata = None
     if fdata:
@@ -79,20 +82,18 @@ def get_values(yml, tagname):
         if key == tagname:
             yield value
         elif isinstance(value, dict):
-            for subvalue in get_values(value, tagname):
-                yield subvalue
+            yield from get_values(value, tagname)
         elif isinstance(value, list):
             for subitem in value:
                 if isinstance(subitem, dict):
-                    for subvalue in get_values(subitem, tagname):
-                        yield subvalue
+                    yield from get_values(subitem, tagname)
 
 
 def notify_private(cfg, subject, text):
     """ Notify a project's private list about issues... """
     # infer project name
     m = re.match(r"(?:incubator-)?([^-.]+)", cfg.repo_name)
-    pname = m.group(1)
+    pname = m[1]
     pname = WSMAP.get(pname, pname)
     #  recps = ["private@%s.apache.org" % pname, "private@infra.apache.org"]
     recps = ["notifications@infra.apache.org"]  # For now, send to projects later.
@@ -113,17 +114,16 @@ def scan_for_problems(yml, filename):
     #  Rule 1: No pull_request_target triggers if secrets are used in the workflow
     if "on" in yml:
         triggers = yml.get("on", [])
-        if (isinstance(triggers, list) or isinstance(triggers, dict)) and "pull_request_target" in triggers:
-            # No ${{ secrets.GITHUB_TOKEN }} etc in pull_request_target workflows.
-            secrets_where = contains(filename, fnvalue="${{ secrets.* }}")
-            if secrets_where:
+        if (
+            isinstance(triggers, (list, dict))
+            and "pull_request_target" in triggers
+        ):
+            if secrets_where := contains(filename, fnvalue="${{ secrets.* }}"):
                 problems += (
                     "- Workflow can be triggered by forks (pull_request_target) but contains references to secrets %s!\n"
                     % secrets_where
                 )
-            # No imports via from_secret!
-            from_secret = get_values(yml, "from_secret")
-            if from_secret:
+            if from_secret := get_values(yml, "from_secret"):
                 secrets_where = contains(filename, value="from_secret")
                 problems += (
                     "- Workflow can be triggered by forks (pull_request_target) but contains references to secrets %s!\n"
@@ -160,12 +160,10 @@ def main():
                     filename.endswith(".yml") or filename.endswith(".yaml")
                 ):
                     yml = get_yaml(filename, ref.name)
-                    problems = scan_for_problems(yml, filename)
-                    if problems:
+                    if problems := scan_for_problems(yml, filename):
                         notify_private(
                             cfg,
-                            "Security policy warning for GitHub Actions defined in %s.git: %s"
-                            % (cfg.repo_name, filename),
+                            f"Security policy warning for GitHub Actions defined in {cfg.repo_name}.git: {filename}",
                             "The following issues were detected while scanning %s in the %s repository:\n\n"
                             "%s\n\n"
                             "Please see https://s.apache.org/ghactions for our general policies on GitHub Actions.\n"

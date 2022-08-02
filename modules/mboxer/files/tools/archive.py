@@ -49,6 +49,7 @@ president:
 
 """
 
+
 import email.parser
 import time
 import re
@@ -66,7 +67,7 @@ import requests
 # Fetch config yaml
 cpath = os.path.dirname(os.path.realpath(__file__))
 try:
-    config = yaml.safe_load(open("%s/settings.yml" % cpath))
+    config = yaml.safe_load(open(f"{cpath}/settings.yml"))
 except:
     print("Can't find config, using defaults (/x1/archives/)")
     config = {
@@ -95,7 +96,7 @@ def lock(fd):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             break
         except BlockingIOError as e:
-            if e.errno == errno.EAGAIN or e.errno == errno.EACCES:
+            if e.errno in [errno.EAGAIN, errno.EACCES]:
                 time.sleep(0.1)
             else:
                 raise
@@ -114,33 +115,31 @@ def dumpbad(what):
 
 
 def redact(sender):
-    m = re.match(r"(.+)\s*<.+>", sender)
-    if m:
-        return m.group(1).strip()
-    m = re.match(r"<?(.)(.*)@(.+)>?", sender)
-    if m:
-        return "%s...@%s" % ( m.group(1), m.group(3) )
+    if m := re.match(r"(.+)\s*<.+>", sender):
+        return m[1].strip()
+    if m := re.match(r"<?(.)(.*)@(.+)>?", sender):
+        return f"{m[1]}...@{m[3]}"
     return '?@?'
 
 
 def main():
     input_stream = sys.stdin.buffer
-    
+
     msgstring = input_stream.read()
     msg = None
-    
+
     # Try parsing the email headers
     try:
         msg = email.parser.BytesHeaderParser().parsebytes(msgstring)
     except Exception as err:
-        print("STDIN parser exception: %s" % err)
-    
+        print(f"STDIN parser exception: {err}")
+
     # If email wasn't valid, dump it in the bademails file
     if msgstring and not msg:
-        print("Invalid email received, dumping in %s!" % config['dumpfile'])
+        print(f"Invalid email received, dumping in {config['dumpfile']}!")
         dumpbad(msgstring)
         sys.exit(0) # Bail quietly
-    
+
     # So, we got an email now - who is it for??
 
     # Have we got a list id override?
@@ -148,17 +147,15 @@ def main():
 
     # If not, try List-Post
     if not recipient:
-        header = msg.get('list-post')
-        if header:
+        if header := msg.get('list-post'):
             print(header)
-            m = re.match(r"<mailto:(.+?@.*?)>", header)
-            if m:
-                recipient = m.group(1)
+            if m := re.match(r"<mailto:(.+?@.*?)>", header):
+                recipient = m[1]
             else:
-                print("Unexpected list-post: %s" % header)
+                print(f"Unexpected list-post: {header}")
         else:
-            print("Missing list-post: %s" % msg.get_unixfrom())
-    
+            print(f"Missing list-post: {msg.get_unixfrom()}")
+
     if recipient:
         # validate listname and fqdn, just in case
         listname, fqdn = recipient.lower().split('@', 1)
@@ -172,21 +169,21 @@ def main():
         YM = time.strftime("%Y%m", time.gmtime()) # Use UTC
         adir = config['archivedir']
         dochmod = True
-        if args.security == 'restricted':
+        if args.security == 'private':
+            adir = config['privatedir']
+        elif args.security == 'restricted':
             adir = config['restricteddir']
             dochmod = False
-        elif args.security == 'private':
-            adir = config['privatedir']
         # Construct a path to the mbox file
         fqdnpath = os.path.join(adir, fqdn)
         listpath = os.path.join(fqdnpath, listname)
-        path = os.path.join(listpath, "%s.mbox" % YM)
-        print("This is for %s, archiving under %s!" % (recipient, path))
+        path = os.path.join(listpath, f"{YM}.mbox")
+        print(f"This is for {recipient}, archiving under {path}!")
         # Show some context in case the IO fails:
-        print("Return-Path: %s" % msg.get('Return-Path'))
-        print("Message-Id: %s" % msg.get('Message-Id'))
+        print(f"Return-Path: {msg.get('Return-Path')}")
+        print(f"Message-Id: {msg.get('Message-Id')}")
         if not os.path.exists(listpath):
-            print("Creating directory %s first" % listpath)
+            print(f"Creating directory {listpath} first")
             os.makedirs(listpath, exist_ok = True)
             # Since we're running as nobody, we need to...massage things for now
             # chmod fqdn and fqdn/list as 0705
@@ -203,22 +200,27 @@ def main():
             f.write(b"\n")
             f.close() # Implicitly releases the lock
             os.chmod(path, stat.S_IWUSR | stat.S_IRUSR | stat.S_IROTH)
-        
+
         # If public email on standard open channels, we can notify pypubsub
         if not args.security and listname in ['user', 'users', 'dev', 'issues']:
             payload = {
                 'email': {
                     'domain': fqdn,
                     'list': listname,
-                    'list_full': '%s@%s' % ( listname, fqdn),
+                    'list_full': f'{listname}@{fqdn}',
                     'sender': redact(msg.get('From', '?@?')),
                     'subject': msg.get('Subject'),
                     'message-id': msg.get('Message-ID', ''),
-                    'snippet': msgbody.get_body(msg)[:200]
+                    'snippet': msgbody.get_body(msg)[:200],
                 }
             }
+
             try:
-                rv = requests.post('http://pubsub.apache.org:2069/email/%s/%s' % (fqdn, listname), json = payload)
+                rv = requests.post(
+                    f'http://pubsub.apache.org:2069/email/{fqdn}/{listname}',
+                    json=payload,
+                )
+
             except:
                 pass
     else:

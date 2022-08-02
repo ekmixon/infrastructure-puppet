@@ -36,7 +36,7 @@ logging.basicConfig(filename='ghadd.log', format='[%(asctime)s]: %(message)s', l
 UID_RE = re.compile("uid=([^,]+),ou=people,dc=apache,dc=org")
 
 # Run `python grouper.py debug` to check teams but not add/remove users
-DEBUG_RUN = True if len(sys.argv) > 1 and sys.argv[1] == 'debug' else False
+DEBUG_RUN = len(sys.argv) > 1 and sys.argv[1] == 'debug'
 if DEBUG_RUN:
     print("Debug run active! Not modifying team")
 
@@ -67,9 +67,9 @@ def removeGitHubOrgMember(login):
     if login.lower() in ['humbedooh', 'asfbot', 'asfgit']:
         logging.info("Not removing this account just yet")
         return
-    logging.info("- Removing %s from organisation..." % login)
-    url = "https://api.github.com/orgs/apache/members/%s" % login
-    r = requests.delete(url, headers = {'Authorization': "token %s" % ORG_READ_TOKEN})
+    logging.info(f"- Removing {login} from organisation...")
+    url = f"https://api.github.com/orgs/apache/members/{login}"
+    r = requests.delete(url, headers={'Authorization': f"token {ORG_READ_TOKEN}"})
 
     if r.status_code <= 204:
         logging.info("- Removal done!")
@@ -82,9 +82,9 @@ def addGitHubTeamMember(teamID, login):
     if str(int(teamID)) != str(teamID):
         logging.warning("Bad Team ID passed!!")
         return None
-    logging.info("- Adding %s to team #%s..." % (login, str(teamID)))
-    url = "https://api.github.com/teams/%s/memberships/%s" % (teamID, login)
-    r = requests.put(url, headers = {'Authorization': "token %s" % ORG_READ_TOKEN})
+    logging.info(f"- Adding {login} to team #{str(teamID)}...")
+    url = f"https://api.github.com/teams/{teamID}/memberships/{login}"
+    r = requests.put(url, headers={'Authorization': f"token {ORG_READ_TOKEN}"})
     data = json.loads(r.content)
     if 'state' in data:
         logging.info("- Additions done!")
@@ -102,12 +102,14 @@ def getGitHubTeamMembers(teamID):
         return None
     for n in range(1, 200): # 200 would be 6000 members, we have 1300ish now...
         url = "https://api.github.com/teams/%s/members?page=%u" % (teamID, n)
-        data = requests.get(url, headers = {'Authorization': "token %s" % ORG_READ_TOKEN}).json()
+        data = requests.get(
+            url, headers={'Authorization': f"token {ORG_READ_TOKEN}"}
+        ).json()
+
         # Break if no more members
         if len(data) == 0:
             break
-        for member in data:
-            members.append(member['login'].lower())
+        members.extend(member['login'].lower() for member in data)
     return sorted(members)
 
 def getCommitters():
@@ -133,7 +135,7 @@ def getCommitters():
 
         ldapClient.unbind_s()
     except Exception as err:
-        logging.error("Could not fetch LDAP data: %s" % err)
+        logging.error(f"Could not fetch LDAP data: {err}")
         committers = None
     return committers
 
@@ -168,16 +170,15 @@ for k in committers:
         logging.info("%s (%s) wasn't found in GitHub, inviting!" % (member, k))
         if re.match(r"^[-a-zA-Z_0-9.]+", member):
             gh_added += 1
-            if not DEBUG_RUN:
-                if not addGitHubTeamMember(TEAM_ID, member):
-                    bad_invites.append(k)
+            if not DEBUG_RUN and not addGitHubTeamMember(TEAM_ID, member):
+                bad_invites.append(k)
         else:
             logging.info("Invalid GH username detected, ignoring this..")
 
 # Remove bad invites
 for k in bad_invites:
     del committers[k]
-            
+
 # Save updated map
 MAP = committers
 

@@ -53,17 +53,13 @@ if not args.load and not args.save:
 
 allrepos = filter(lambda repo: os.path.isdir(os.path.join(gitdir, repo)), os.listdir(gitdir))
 
-GIT_SETTINGS = {}
-
-if args.load:
-    GIT_SETTINGS = json.load(open(args.load))
-
+GIT_SETTINGS = json.load(open(args.load)) if args.load else {}
 for repo in allrepos:
     if not args.glob or fnmatch.fnmatch(repo, args.glob):
         # If exporting settings, grab them from the repo
         os.chdir(os.path.join(gitdir, repo))
         if args.save:
-            print("Exporting settings from %s into JSON" % repo)
+            print(f"Exporting settings from {repo} into JSON")
             GIT_SETTINGS[repo] = {}
             txt = subprocess.check_output(['/usr/bin/git', 'config', '-l']).decode('ascii')
             lines = txt.split("\n")
@@ -73,18 +69,17 @@ for repo in allrepos:
                     # We are only interested in hooks.asfgit.* and apache.* settings here.
                     if 'hooks.asfgit' in key or 'apache' in key:
                         GIT_SETTINGS[repo][key] = value
-            print("Found %s settings to export from %s" % (len(GIT_SETTINGS[repo].keys()), repo))
-            
-        # Otherwise, if we're importing settings, set them if we got 'em
+            print(f"Found {len(GIT_SETTINGS[repo].keys())} settings to export from {repo}")
+
         elif args.load and repo in GIT_SETTINGS:
-            print("Importing settings from JSON into %s" % repo)
+            print(f"Importing settings from JSON into {repo}")
             for key, value in GIT_SETTINGS[repo].items():
-                print("Setting %s = %s" % (key, value))
+                print(f"Setting {key} = {value}")
                 subprocess.check_call(['/usr/bin/git', 'config', key, value])
-                
+
 
 if args.save:
-    print("Saving exported settings to %s" % args.save)
+    print(f"Saving exported settings to {args.save}")
     os.chdir(cdir)
     json.dump(GIT_SETTINGS, open(args.save, "w"), indent = 4)
     

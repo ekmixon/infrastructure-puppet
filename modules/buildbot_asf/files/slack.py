@@ -67,8 +67,7 @@ class SlackStatusPush(StatusReceiverMultiService):
 
         build_url = self.master_status.getURLForThing(build)
         if self.localhost_replace:
-            build_url = build_url.replace("//localhost", "//{}".format(
-                self.localhost_replace))
+            build_url = build_url.replace("//localhost", f"//{self.localhost_replace}")
 
         source_stamps = build.getSourceStamps()
         branch_names = ', '.join([source_stamp.branch for source_stamp in source_stamps])

@@ -65,15 +65,15 @@ def update_github_repo(token, repo, debug=False):
     Renames a repository on GitHub by sending a PATCH request.
     """
     # API URL for archiving
-    url = "https://api.github.com/repos/apache/%s" % repo
+    url = f"https://api.github.com/repos/apache/{repo}"
 
-    # Headers - json payload + creds
-    headers = {
-        "content-type": "application/json",
-    }
     # Run the request
     if not debug:
         print("  - Changing repository to archived on GitHub...")
+        # Headers - json payload + creds
+        headers = {
+            "content-type": "application/json",
+        }
         r = requests.patch(url, headers=headers, json={"archived": True}, auth=(token, "x-oauth-basic"))
         if r.status_code == requests.codes.ok:
             print("  - Repository Archived!")
@@ -84,7 +84,7 @@ def update_github_repo(token, repo, debug=False):
             print("Fix the issue and run the tool again.")
             sys.exit(-1)
     else:
-        print("  - Query URL: %s" % url)
+        print(f"  - Query URL: {url}")
         print("  - Debug set: Skipping...")
 
 
@@ -95,9 +95,9 @@ def update_local_repo(repo, retire=False, debug=False):
     - Update the description with '-- Archived'
     - Touch nocommit file to ensure Read Only
     """
-    repo = repo + ".git"
     # Change git config options
     if not debug:
+        repo = f"{repo}.git"
         if retire:
             # Rewire notifications.yaml to send to @attic.a.o
             noti_file = os.path.join(REPO_ROOT, repo, "notifications.yaml")
@@ -114,7 +114,7 @@ def update_local_repo(repo, retire=False, debug=False):
         # Update Repo description
         desc_file = os.path.join(REPO_ROOT, repo, "description")
         if os.path.isfile(desc_file):
-            print("  - Updating description file %s" % desc_file)
+            print(f"  - Updating description file {desc_file}")
             with open(desc_file, "a+") as desc:
                 desc.write(description)
                 desc.close()
@@ -123,9 +123,9 @@ def update_local_repo(repo, retire=False, debug=False):
         print("  - Setting Archive on GitBox")
         nocommit_file = os.path.join(REPO_ROOT, repo, "nocommit")
         if not os.path.isfile(nocommit_file):
-            print("  - Creating %s" % nocommit_file)
+            print(f"  - Creating {nocommit_file}")
             with open(nocommit_file, "w+") as f:
-                f.write("Repository retired at %s" % datetime.datetime.now().isoformat())
+                f.write(f"Repository retired at {datetime.datetime.now().isoformat()}")
         print("  - Success!")
         print("  - Done!")
 
@@ -138,7 +138,7 @@ def main():
     me = pwd.getpwuid(os.getuid()).pw_name
     if me not in ("www-data", "git",):
         print("You must run this as either www-data (on gitbox/git-wip) or git (on git.a.o)!")
-        print("You are running as: %s" % me)
+        print(f"You are running as: {me}")
         sys.exit(-1)
 
     parser = argparse.ArgumentParser(description="Apache Git repository archival utility")
@@ -152,10 +152,10 @@ def main():
     parser.add_argument("-n", "--name", help="Archive target name")
     parser.add_argument("-d", "--debug", action="store_true", help="debug switch")
     args = parser.parse_args()
-    
+
     # Expect one project name passed on, and only one!
     if not os.path.isdir(REPO_ROOT):
-        print("%s does not seem to be a directory, aborting!" % REPO_ROOT)
+        print(f"{REPO_ROOT} does not seem to be a directory, aborting!")
         sys.exit(-1)
 
     if args.retire_project:
@@ -163,18 +163,17 @@ def main():
         if os.path.isdir(REPO_ROOT):
             pr = 0
             for repo in os.listdir(REPO_ROOT):
-                m = re.match(r"^%s(-.+)?(\.git)?$" % args.name, repo)
-                if m:
+                if m := re.match(r"^%s(-.+)?(\.git)?$" % args.name, repo):
                     pr += 1
-                    print("Archiving %s..." % repo)
+                    print(f"Archiving {repo}...")
                     update_local_repo(repo, retire=True, debug=args.debug)
                     update_github_repo(TOKEN, repo, debug=args.debug)
             print("All done, processed %u repositories!" % pr)
 
     if args.archive_repo:
         repo = args.name
-        if os.path.isdir(os.path.join(REPO_ROOT, "%s.git" % args.name)):
-            print("Archiving %s..." % args.name)
+        if os.path.isdir(os.path.join(REPO_ROOT, f"{args.name}.git")):
+            print(f"Archiving {args.name}...")
             update_local_repo(repo, debug=args.debug)
             update_github_repo(TOKEN, repo, debug=args.debug)
         print("All done!")

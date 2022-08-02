@@ -13,14 +13,13 @@
         """ Locks or unlocks all repos. If unlocking, also syncs with github first """
         repos = sorted([f for f in os.listdir(GIT_ROOT) if f.endswith('.git')])
         for repo in repos:
-            lockfile = "%s/%s/nocommit" % (GIT_ROOT, repo)
+            lockfile = f"{GIT_ROOT}/{repo}/nocommit"
             # lock?
             if l:
-                print("Locking %s" % repo)
+                print(f"Locking {repo}")
                 open(lockfile, "w").write("nope!")
-            # unlock?
             else:
-                print("Syncing %s from GitHub" % repo)
+                print(f"Syncing {repo} from GitHub")
                 os.chdir(os.path.join(GIT_ROOT, repo))
                 # Try up to five times to sync, github may sometimes bork it
                 while i < 5 and rv:
@@ -31,18 +30,18 @@
                     output,error = p.communicate()
                     rv = p.poll()
                 if not rv:
-                    print("Synced %s" % repo)
+                    print(f"Synced {repo}")
                     # If sync worked, it's not broken. If broken .txt exists, wipe it
                     try:
-                        if os.path.exists("/x1/gitbox/broken/%s.txt" % reponame):
-                            os.unlink("/x1/gitbox/broken/%s.txt" % reponame)
+                        if os.path.exists(f"/x1/gitbox/broken/{reponame}.txt"):
+                            os.unlink(f"/x1/gitbox/broken/{reponame}.txt")
                     except:
                         pass # Fail silently, it's not that important
                 else:
                     print("Sync borked, retrying...")
                     time.sleep(1)
-     
-                print("Unlocking %s" % repo)
+
+                print(f"Unlocking {repo}")
                 if os.path.exists(lockfile):
                     os.unlink(lockfile)
         print("All done here :-)")

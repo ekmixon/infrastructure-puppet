@@ -28,14 +28,12 @@ if DEBUG:
 
 
 def _repo_name():
-    path = filter(None, os.environ["PATH_INFO"].split("/"))
-    path = filter(lambda p: p != "git-receive-pack", path)
-    if len(path) != 1:
-        raise ValueError("Invalid PATH_INFO: %s" % os.environ["PATH_INFO"])
-    path = path[0]
-    if path.endswith('.git'):
-        return util.decode(path[:-4])
-    return util.decode(path)
+  path = filter(None, os.environ["PATH_INFO"].split("/"))
+  path = filter(lambda p: p != "git-receive-pack", path)
+  if len(path) != 1:
+    raise ValueError(f'Invalid PATH_INFO: {os.environ["PATH_INFO"]}')
+  path = path[0]
+  return util.decode(path[:-4]) if path.endswith('.git') else util.decode(path)
 
 
 if os.environ.get('GIT_ORIGIN_REPO'):
@@ -57,7 +55,7 @@ def _git_config(key, default=NO_DEFAULT):
 
 
 repo_name = _repo_name()
-repo_dir = os.path.join(util.environ("GIT_PROJECT_ROOT"), u"%s.git" % repo_name)
+repo_dir = os.path.join(util.environ("GIT_PROJECT_ROOT"), f"{repo_name}.git")
 committer = util.environ("GIT_COMMITTER_NAME")
 remote_user = util.environ("GIT_COMMITTER_EMAIL")
 script_name = util.environ("SCRIPT_NAME")

@@ -47,7 +47,7 @@ def main():
             util.abort(WRITE_LOCKED)
 
     # Check if the repo is out of sync
-    lockfile = "/x1/gitbox/broken/%s.txt" % cfg.repo_name
+    lockfile = f"/x1/gitbox/broken/{cfg.repo_name}.txt"
     if os.path.exists(lockfile):
         util.abort(SYNC_BROKEN % lockfile)
 
@@ -64,7 +64,7 @@ def main():
     # IP addresses are listed in the constant above.
     if cfg.committer == "mergebot-role" and cfg.ip not in MERGEBOT_APPROVED_IPS:
         util.abort(u"mergebot only works from the mergebot VM, tut tut!")
-    
+
     # buildbot only possible from bb-slave1
     # 209.188.14.160 is bb-slave1.a.o
     if cfg.committer == "buildbot" and (cfg.ip != "209.188.14.160"):
@@ -77,7 +77,7 @@ def main():
     has_set_db = False
     for ref in git.stream_refs(sys.stdin):
         if cfg.is_empty and not has_set_db:
-            print("First ever branch detected, setting %s as default branch." % ref.name)
+            print(f"First ever branch detected, setting {ref.name} as default branch.")
             run.git('symbolic-ref', 'HEAD', ref.name)
             has_set_db = True
         # GitHub != GitBox main/master fixups 'cause gitbox defaults to master and github to main.
@@ -105,7 +105,7 @@ def main():
         cursor.execute("""INSERT INTO pushlog
                   (repository, asfid, githubid, baseref, ref, old, new, date)
                   VALUES (?,?,?,?,?,?,?,DATETIME('now'))""", (cfg.repo_name, cfg.committer, 'asfgit', ref.name, ref.name, ref.oldsha, ref.newsha, ))
-    
+
     # Save and close up shop
     conn.commit()
     conn.close()

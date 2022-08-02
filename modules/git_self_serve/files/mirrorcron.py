@@ -30,10 +30,12 @@ def getJSON(url, creds = None, cookie = None):
     if creds and len(creds) > 0:
         xcreds = creds.encode(encoding='ascii', errors='replace')
         auth = base64.encodebytes(xcreds).decode('ascii', errors='replace').replace("\n", '')
-        headers = {"Content-type": "application/json",
-                     "Accept": "*/*",
-                     "Authorization": "Basic %s" % auth
-                     }
+        headers = {
+            "Content-type": "application/json",
+            "Accept": "*/*",
+            "Authorization": f"Basic {auth}",
+        }
+
 
     request = urllib.request.Request(url, headers = headers)
     result = urllib.request.urlopen(request)
@@ -47,14 +49,18 @@ created = 0
 # If queue is valid:
 if js:
     print("analysing %u items" % len(js))
-    
+
     # For each item:
     # - Check that it hasn't been mirrored yet
     # - Check that a repo with this name doesn't exist already
     # - Check that name is valid
     # - Mirror repo if all is okay
     for item in js:
-        if not 'mirrored' in item and item['mirror'] == True and 'created' in item:
+        if (
+            'mirrored' not in item
+            and item['mirror'] == True
+            and 'created' in item
+        ):
             reponame = item['name']
             # Check valid name
             if len(reponame) < 5 or reponame.find("..") != -1 or reponame.find("/") != -1:
@@ -63,34 +69,37 @@ if js:
             # Set some vars
             notify = item['notify']
             description = item['description'] if 'description' in item else "Unknown"
-            
+
             # If repo doesn't already exist, create it
-            if not os.path.exists("/x1/git/mirrors/%s" % reponame):
-                print("%s is a new repo, creating it..." % reponame)
+            if not os.path.exists(f"/x1/git/mirrors/{reponame}"):
+                print(f"{reponame} is a new repo, creating it...")
                 try:
                     inp = subprocess.check_output("/x1/git/bin/create-mirror-from-git.sh %s \"%s\"" % (reponame, description), shell = True).decode('ascii', 'replace')
                 except subprocess.CalledProcessError as err:
-                    print("Borked: %s" % err.output)
+                    print(f"Borked: {err.output}")
                     continue
             else:
                 print("Repo already exists, ignoring this request...sort of")
-            
+
             # Notify reporeq that we've created this repository!
-            print("Notifying https://reporeq.apache.org/ss.lua?mirrored=%s" % reponame)
-            request = urllib.request.Request("https://reporeq.apache.org/ss.lua?mirrored=%s" % reponame)
+            print(f"Notifying https://reporeq.apache.org/ss.lua?mirrored={reponame}")
+            request = urllib.request.Request(
+                f"https://reporeq.apache.org/ss.lua?mirrored={reponame}"
+            )
+
             result = urllib.request.urlopen(request)
-            
+
             # Inform infra@ and private@$pmc that the mirror has been set up
             msg = MIMEText("New repository %s was mirrored to git.a.o (and thus GitHub), as requested by %s.\nNew mirrors are available on GitHub no more than 24 hours later.\n\nWith regards,\nApache Infrastructure." % (reponame, item['requester']))
-            msg['Subject'] = 'New git mirror created: %s' % reponame
+            msg['Subject'] = f'New git mirror created: {reponame}'
             msg['From'] = "git@apache.org"
             msg['Reply-To'] = "users@infra.apache.org"
-            msg['To'] = "users@infra.apache.org, private@%s.apache.org" % item['pmc']
-            
+            msg['To'] = f"users@infra.apache.org, private@{item['pmc']}.apache.org"
+
             s = smtplib.SMTP(host='mail.apache.org', port=2025)
             s.send_message(msg)
             s.quit()
-            
+
             # We made a thing!
             created += 1
 

@@ -11,17 +11,9 @@ if len(sys.argv) < 2:
 
 OUTFILE = sys.argv[1]
 
-if len(sys.argv) > 2:
-  ROOT = sys.argv[2]
-else:
-  ROOT="/x1/mail-archives/mod_mbox"
-
+ROOT = sys.argv[2] if len(sys.argv) > 2 else "/x1/mail-archives/mod_mbox"
 # allow for blanks at head of TLP block
-if len(sys.argv) > 3:
-  K = int(sys.argv[3])
-else:
-  K = 3
-
+K = int(sys.argv[3]) if len(sys.argv) > 3 else 3
 OUT = ""
 # Get the list of podlings from a list the Incubator PMC maintains.
 def _get_podlings():
@@ -41,19 +33,19 @@ podlings = _get_podlings()
 tlps={}
 count = 0
 for files in os.listdir(ROOT):
-    path = files
-    tlp = path[0:path.find('-')]
-    list = path[path.find('-')+1:]
+  path = files
+  tlp = path[:path.find('-')]
+  list = path[path.find('-')+1:]
     # print "%s - %s %s" % (tlp, list, path)
-    if not os.access("%s/%s/listinfo.db" % (ROOT, path), os.F_OK):
-        continue
-    if tlp == "www":
-       tlp = "asf-wide"
-    if tlp in podlings: tlp += '.incubator'
-    if not tlps.has_key(tlp):
-        tlps[tlp] = {}
-    tlps[tlp][list] = [path, 'incubator-'+path][tlp[:-10] in podlings]
-    count = count + 1
+  if not os.access(f"{ROOT}/{path}/listinfo.db", os.F_OK):
+    continue
+  if tlp == "www":
+     tlp = "asf-wide"
+  if tlp in podlings: tlp += '.incubator'
+  if not tlps.has_key(tlp):
+      tlps[tlp] = {}
+  tlps[tlp][list] = [path, f'incubator-{path}'][tlp[:-10] in podlings]
+  count = count + 1
 
 keys = tlps.keys()
 keys.sort()

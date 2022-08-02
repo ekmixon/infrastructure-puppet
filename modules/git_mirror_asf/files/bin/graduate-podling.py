@@ -57,7 +57,7 @@ def rename_github_repo(token, old, new):
     new = new.replace(".git", "")
 
     # API URL for patching the name
-    url = "https://api.github.com/repos/apache/%s" % old
+    url = f"https://api.github.com/repos/apache/{old}"
 
     # Headers - json payload + creds
     headers = {
@@ -70,7 +70,7 @@ def rename_github_repo(token, old, new):
     })
 
     # Run the request
-    print("  - Changing repository from %s to %s on GitHub..." % (old, new))
+    print(f"  - Changing repository from {old} to {new} on GitHub...")
     r = requests.patch(url, headers = headers, data = payload, auth = (token, 'x-oauth-basic'))
     if r.status_code == requests.codes.ok:
         print("  - Repository name changed!")
@@ -90,20 +90,28 @@ def rename_local_repo(old, new, project):
         - Change PR notification ML
     """
     # First, rename the dir on the box. Fall flat on our behind if this fails.
-    print("  - Renaming gitbox repo from %s/%s to %s/%s..." % (REPO_ROOT, old, REPO_ROOT, new))
-    os.rename("%s/%s" % (REPO_ROOT, old), "%s/%s" % (REPO_ROOT, new))
+    print(
+        f"  - Renaming gitbox repo from {REPO_ROOT}/{old} to {REPO_ROOT}/{new}..."
+    )
+
+    os.rename(f"{REPO_ROOT}/{old}", f"{REPO_ROOT}/{new}")
 
     # Change git config options
-    gcpath = "%s/%s/config" % (REPO_ROOT, new)
+    gcpath = f"{REPO_ROOT}/{new}/config"
     if not os.path.exists(gcpath):
-        gcpath = "%s/%s/.git/config" % (REPO_ROOT, new)
+        gcpath = f"{REPO_ROOT}/{new}/.git/config"
     gconf = git.GitConfigParser(gcpath, read_only = False)
 
     # Remote origin on GitHub
     if gconf.has_section('remote "origin"'):
         print("  - Setting remote...")
         # This needs to be...figured out automatically:
-        gconf.set('remote "origin"', 'url', "https://git-wip-us.apache.org/repos/asf/%s" % new)
+        gconf.set(
+            'remote "origin"',
+            'url',
+            f"https://git-wip-us.apache.org/repos/asf/{new}",
+        )
+
 
     # Remote SVN origin?
     if gconf.has_section('svn-remote "svn"'):
@@ -117,41 +125,40 @@ def rename_local_repo(old, new, project):
     if gconf.has_option('hooks.asfgit', 'recips'):
         ml = gconf.get('hooks.asfgit', 'recips')
         ml = re.sub(r"incubator\.", "", ml)
-        print("    - Changing commit ML to %s" % ml)
+        print(f"    - Changing commit ML to {ml}")
         gconf.set('hooks.asfgit', 'recips', ml)
     if gconf.has_section('apache') and gconf.has_option('apache', 'dev'):
         ml = gconf.get('apache', 'dev')
         ml = re.sub(r"incubator\.", "", ml)
-        print("    - Changing PR notification ML to %s" % ml)
+        print(f"    - Changing PR notification ML to {ml}")
         gconf.set('apache', 'dev', ml)
 
     print("  - Done!")
 
 # Demand being run by www-data or git
 me = pwd.getpwuid(os.getuid()).pw_name
-if me != "www-data" and me != "git":
+if me not in ["www-data", "git"]:
     print("You must run this as either www-data (on gitbox/git-wip) or git (on git.a.o)!")
-    print("You are running as: %s" % me)
+    print(f"You are running as: {me}")
     sys.exit(-1)
 
 # Expect one project name passed on, and only one!
 if len(sys.argv) == 2:
     PROJECT = sys.argv[1]
-    print("Graduating %s..." % PROJECT)
+    print(f"Graduating {PROJECT}...")
     if os.path.isdir(REPO_ROOT):
         pr = 0
         for repo in os.listdir(REPO_ROOT):
-            m = re.match(r"incubator-%s(-.+)?(\.git)?$"% PROJECT, repo)
-            if m:
+            if m := re.match(r"incubator-%s(-.+)?(\.git)?$" % PROJECT, repo):
                 pr += 1
-                print("- Applying changes to %s ..." % repo)
+                print(f"- Applying changes to {repo} ...")
                 new = repo.replace("incubator-", "")
                 rename_local_repo(repo, new, PROJECT)
                 if not IS_MIRROR:
                     rename_github_repo(TOKEN, repo, new)
         print("All done, processed %u repositories!" % pr)
     else:
-        print("%s does not seem to be a directory, aborting!" % REPO_ROOT)
+        print(f"{REPO_ROOT} does not seem to be a directory, aborting!")
 else:
     print("Usage: graduate-podling.py $podling")
     print("Example: graduate-podling.py openwhisk")

@@ -58,30 +58,30 @@ def get_stats(path, excludes, files):
 def main():
     used, total, bused = get_used(args.path)
     print("%s is using %.1f%% of available disk space" % (args.path, used))
-    
-    # Figure out how much space we need to clear up
-    space_freed = 0
+
     space_needed = (used - args.max) * total / 100
-    
+
     # Do we need to clean up?
     if space_needed > 0:
         if space_needed > (1024**3):
             print("Need to free at least %.2f GB of space" % (space_needed/1024**3))
         else:
             print("Need to free at least %.2f MB of space" % (space_needed/1024**2))
-        
+
         # Get all files and their info
         files = []
-        get_stats(args.path, args.exclude if args.exclude else ['.git', '.svn'], files)
-        
+        get_stats(args.path, args.exclude or ['.git', '.svn'], files)
+
         # Sort by age
         files.sort(key = lambda x: x[0])
-        
+
         print("Found %u files" % len(files))
         if (args.debug):
             print("Debug mode, not going to remove files")
-        
+
         fd = 0
+        # Figure out how much space we need to clear up
+        space_freed = 0
         for el in files:
             fp = el[2]
             bs = el[1]
@@ -94,10 +94,10 @@ def main():
             if space_freed >= space_needed:
                 print("We freed enough space, quitting.")
                 break
-        
+
         used, total, bused = get_used(args.path)
         print()
-        print("Summary for %s:" % args.path)
+        print(f"Summary for {args.path}:")
         print("-----------------------------------")
         print("Files deleted: %20u" % fd)
         print("Bytes freed:   %20u" % space_freed)
@@ -105,7 +105,7 @@ def main():
         print("------------------------------------")
     else:
         print()
-        print("Summary for %s:" % args.path)
+        print(f"Summary for {args.path}:")
         print("-----------------------------------")
         print("No files needed to be removed.")
         print("-----------------------------------")

@@ -40,11 +40,7 @@ xform = cgi.FieldStorage();
 
 """ Get a POST/GET value """
 def getvalue(key):
-    val = xform.getvalue(key)
-    if val:
-        return val
-    else:
-        return None
+    return val if (val := xform.getvalue(key)) else None
     
 """ Get an account entry from the DB """
 def getaccount(uid = None):
@@ -87,14 +83,12 @@ def saveaccount(acc, ids = False):
     conn = sqlite3.connect('/x1/gitbox/db/gitbox.db')
     cursor = conn.cursor()
     cursor.execute("SELECT asfid,githubid,asfname FROM sessions WHERE asfid=?", (acc['asfid'],))
-    exists = cursor.fetchone()
-    if exists:
+    if exists := cursor.fetchone():
         cursor.execute("UPDATE sessions SET cookie=?,githubid=?,asfname=? WHERE asfid=?", (acc['cookie'],acc['githubid'], acc['name'], acc['asfid'],))
         # Update ASF<->GH link db??
         if ids:
             cursor.execute("SELECT * from ids WHERE asfid=?", (acc['asfid'],))
-            exists = cursor.fetchone()
-            if exists:
+            if exists := cursor.fetchone():
                 cursor.execute("UPDATE ids SET githubid=?,mfa=?,updated=DATETIME('now') WHERE asfid=?", (acc['githubid'], acc['mfa'], acc['asfid']))
             else:
                 cursor.execute("INSERT INTO ids (asfid,githubid,mfa,updated) VALUES (?,?,?,DATETIME('now'))", (acc['asfid'], acc['githubid'], acc['mfa'],))
@@ -109,13 +103,14 @@ def ldap_groups(uid):
     l = ldap.initialize(LDAP_URI)
     # this search for all objectClasses that user is in.
     # change this to suit your LDAP schema
-    search_filter= "(|(member=%s)(member=uid=%s,ou=people,dc=apache,dc=org))" % (uid, uid)
+    search_filter = (
+        f"(|(member={uid})(member=uid={uid},ou=people,dc=apache,dc=org))"
+    )
+
     try:
-        groups = []
         LDAP_BASE = "ou=groups,dc=apache,dc=org"
         results = l.search_s(LDAP_BASE, ldap.SCOPE_SUBTREE, search_filter, ['cn',])
-        for res in results:
-            groups.append(res[1]['cn'][0]) # each res is a tuple: ('cn=full,ou=ldap,dc=uri', {'cn': ['tlpname']})
+        groups = [res[1]['cn'][0] for res in results]
         infra = getStandardGroup('infrastructure', 'cn=infrastructure,ou=groups,ou=services,dc=apache,dc=org')
         if infra and uid in infra:
             groups.append('infrastructure')
@@ -128,8 +123,10 @@ def getStandardGroup(group, ldap_base = None):
     """ Gets the list of availids in a standard group (pmcs, services, podlings) """
     # First, check if there's a hardcoded member list for this group
     # If so, read it and return that instead of trying LDAP
-    if CONFIG.has_section('group:%s' % group) and CONFIG.has_option('group:%s' % group, 'members'):
-        return CONFIG.get('group:%s' % group, 'members').split(' ')
+    if CONFIG.has_section(f'group:{group}') and CONFIG.has_option(
+        f'group:{group}', 'members'
+    ):
+        return CONFIG.get(f'group:{group}', 'members').split(' ')
     groupmembers = []
     # This might fail in case of ldap bork, if so we'll return nothing.
     try:
@@ -137,10 +134,10 @@ def getStandardGroup(group, ldap_base = None):
         ldapClient.set_option(ldap.OPT_REFERRALS, 0)
 
         ldapClient.bind(LDAP_USER, LDAP_PASSWORD)
-        
+
         # Default LDAP base if not specified
         if not ldap_base:
-            ldap_base = "cn=%s,ou=project,ou=groups,dc=apache,dc=org" % group
+            ldap_base = f"cn={group},ou=project,ou=groups,dc=apache,dc=org"
 
         # This is using the new podling/etc LDAP groups defined by Sam
         results = ldapClient.search_s(ldap_base, ldap.SCOPE_BASE)
@@ -151,8 +148,7 @@ def getStandardGroup(group, ldap_base = None):
             # We are only interested in the member attribs here. owner == ppmc, but we don't care
             if "member" in result_attrs:
                 for member in result_attrs["member"]:
-                    m = UID_RE.match(member) # results are in the form uid=janedoe,dc=... so weed out the uid
-                    if m:
+                    if m := UID_RE.match(member):
                         groupmembers.append(m.group(1))
 
         ldapClient.unbind_s()

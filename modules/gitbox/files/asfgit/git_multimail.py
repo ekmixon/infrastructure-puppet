@@ -14,18 +14,16 @@ import asfgit.run as run
 import re
 import yaml
 
-FORCE_DIFF = True if os.environ.get('FORCE_DIFF', 'NO') == 'YES' else False
+FORCE_DIFF = os.environ.get('FORCE_DIFF', 'NO') == 'YES'
 
 
 def _repo_name():
     path = filter(None, os.environ["PATH_INFO"].split("/"))
     path = filter(lambda p: p != "git-receive-pack", path)
     if len(path) != 1:
-        raise ValueError("Invalid PATH_INFO: %s" % os.environ["PATH_INFO"])
+        raise ValueError(f'Invalid PATH_INFO: {os.environ["PATH_INFO"]}')
     path = path[0]
-    if path[-4:] == ".git":
-        return path[:-4]
-    return path
+    return path[:-4] if path[-4:] == ".git" else path
 
 
 def _git_config(key, default=NO_DEFAULT):
@@ -48,17 +46,13 @@ def _git_config(key, default=NO_DEFAULT):
 def get_recipient(repo, itype, action):
     """ Finds the right email recipient for a repo and an action. """
     scheme = {}
-    m = re.match(r"(?:incubator-)([^-]+)", repo)
-    if m:
-        project = m.group(1)
-    else:
-        project = 'infra'
+    project = m[1] if (m := re.match(r"(?:incubator-)([^-]+)", repo)) else 'infra'
     # Cut .git from repo name if passed along
     if repo.endswith('.git'):
         repo = repo[:-4]
     # Check each repo root dirs for the repository
     for root_dir in ROOT_DIRS:
-        repo_path = os.path.join(root_dir, "%s.git" % repo)
+        repo_path = os.path.join(root_dir, f"{repo}.git")
         if os.path.exists(repo_path):
             # Check for notifications.yaml first
             scheme_path = os.path.join(repo_path, SCHEME_FILE)
@@ -69,13 +63,12 @@ def get_recipient(repo, itype, action):
                     pass
 
             # Check standard git config
-            if not 'commits' in scheme:
+            if 'commits' not in scheme:
                 scheme['commits'] = _git_config("hooks.asfgit.recips", FALLBACK_ADDRESS)
-            default_issue = _git_config("apache.dev", "")
-            if default_issue:
-                if not 'issues' in scheme:
+            if default_issue := _git_config("apache.dev", ""):
+                if 'issues' not in scheme:
                     scheme['issues'] = default_issue
-                if not 'pullrequests' in scheme:
+                if 'pullrequests' not in scheme:
                     scheme['pullrequests'] = default_issue
             break
 
@@ -83,12 +76,12 @@ def get_recipient(repo, itype, action):
         if itype != 'commit':
             it = 'issues' if itype == 'issue' else 'pullrequests'
             if action in ['comment', 'diffcomment', 'edited', 'deleted', 'created']:
-                if ("%s_comment" % it) in scheme:
-                    return scheme["%s_comment" % it]
+                if f"{it}_comment" in scheme:
+                    return scheme[f"{it}_comment"]
                 return scheme.get(it, FALLBACK_ADDRESS)
             elif action in ['open', 'close', 'merge']:
-                if ("%s_status" % it) in scheme:
-                    return scheme["%s_status" % it]
+                if f"{it}_status" in scheme:
+                    return scheme[f"{it}_status"]
                 return scheme.get(it, FALLBACK_ADDRESS)
         elif 'commits' in scheme:
             return scheme['commits']
@@ -98,7 +91,7 @@ def get_recipient(repo, itype, action):
 DEFAULT_COMMIT_URL = 'https://github.com/apache/%(repo_shortname)s/commit/%(id)s'
 DEFAULT_SUBJECT = "%(repo)s git commit: %(subject)s"
 repo_name = _repo_name()
-repo_dir = os.path.join(os.environ.get("GIT_PROJECT_ROOT"), "%s.git" % repo_name)
+repo_dir = os.path.join(os.environ.get("GIT_PROJECT_ROOT"), f"{repo_name}.git")
 committer = os.environ.get("GIT_COMMITTER_NAME")
 sendmail = _git_config("hooks.asfgit.sendmail").strip()
 recipient = get_recipient(repo_name, 'commit', None)
@@ -185,10 +178,7 @@ PYTHON3 = sys.version_info >= (3, 0)
 
 if sys.version_info <= (2, 5):
     def all(iterable):
-        for element in iterable:
-            if not element:
-                return False
-        return True
+        return all(iterable)
 
 
 def is_ascii(s):
@@ -279,7 +269,7 @@ ZEROS = '0' * 40
 LOGBEGIN = '- Log -----------------------------------------------------------------\n'
 LOGEND = '-----------------------------------------------------------------------\n'
 
-ADDR_HEADERS = set(['from', 'to', 'cc', 'bcc', 'reply-to', 'sender'])
+ADDR_HEADERS = {'from', 'to', 'cc', 'bcc', 'reply-to', 'sender'}
 
 # It is assumed in many places that the encoding is uniformly UTF-8,
 # so changing these constants is unsupported.  But define them here
@@ -552,7 +542,7 @@ def choose_git_command():
             # do it.
             cmd = [GIT_EXECUTABLE, '-c', 'foo.bar=baz', '--version']
             read_output(cmd)
-            GIT_CMD = [GIT_EXECUTABLE, '-c', 'i18n.logoutputencoding=%s' % (ENCODING,)]
+            GIT_CMD = [GIT_EXECUTABLE, '-c', f'i18n.logoutputencoding={ENCODING}']
         except CommandError:
             GIT_CMD = [GIT_EXECUTABLE]
 
@@ -582,8 +572,7 @@ def read_output(cmd, input=None, keepends=False, **kw):
         )
     (out, err) = p.communicate(input)
     out = bytes_to_str(out, errors=errors)
-    retcode = p.wait()
-    if retcode:
+    if retcode := p.wait():
         raise CommandError(cmd, retcode)
     if not keepends:
         out = out.rstrip('\n\r')
@@ -646,11 +635,7 @@ def header_encode(text, header_name=None):
     if not isinstance(text, unicode):
         text = unicode(text, 'utf-8')
 
-    if is_ascii(text):
-        charset = 'ascii'
-    else:
-        charset = 'utf-8'
-
+    charset = 'ascii' if is_ascii(text) else 'utf-8'
     return Header(text, header_name=header_name, charset=Charset(charset)).encode()
 
 
@@ -667,11 +652,7 @@ def addr_header_encode(text, header_name=None):
         for name, emailaddr in getaddresses([text])
         )
 
-    if is_ascii(text):
-        charset = 'ascii'
-    else:
-        charset = 'utf-8'
-
+    charset = 'ascii' if is_ascii(text) else 'utf-8'
     return Header(text, header_name=header_name, charset=Charset(charset)).encode()
 
 
@@ -723,10 +704,14 @@ class Config(object):
 
     def get(self, name, default=None):
         try:
-            values = self._split(read_git_output(
-                ['config', '--get', '--null', '%s.%s' % (self.section, name)],
-                env=self.env, keepends=True,
-                ))
+            values = self._split(
+                read_git_output(
+                    ['config', '--get', '--null', f'{self.section}.{name}'],
+                    env=self.env,
+                    keepends=True,
+                )
+            )
+
             assert len(values) == 1
             return values[0]
         except CommandError:
@@ -735,9 +720,10 @@ class Config(object):
     def get_bool(self, name, default=None):
         try:
             value = read_git_output(
-                ['config', '--get', '--bool', '%s.%s' % (self.section, name)],
+                ['config', '--get', '--bool', f'{self.section}.{name}'],
                 env=self.env,
-                )
+            )
+
         except CommandError:
             return default
         return value == 'true'
@@ -749,10 +735,14 @@ class Config(object):
         is unset."""
 
         try:
-            return self._split(read_git_output(
-                ['config', '--get-all', '--null', '%s.%s' % (self.section, name)],
-                env=self.env, keepends=True,
-                ))
+            return self._split(
+                read_git_output(
+                    ['config', '--get-all', '--null', f'{self.section}.{name}'],
+                    env=self.env,
+                    keepends=True,
+                )
+            )
+
         except CommandError:
             t, e, traceback = sys.exc_info()
             if e.retcode == 1:
@@ -763,16 +753,12 @@ class Config(object):
                 raise
 
     def set(self, name, value):
-        read_git_output(
-            ['config', '%s.%s' % (self.section, name), value],
-            env=self.env,
-            )
+        read_git_output(['config', f'{self.section}.{name}', value], env=self.env)
 
     def add(self, name, value):
         read_git_output(
-            ['config', '--add', '%s.%s' % (self.section, name), value],
-            env=self.env,
-            )
+            ['config', '--add', f'{self.section}.{name}', value], env=self.env
+        )
 
     def __contains__(self, name):
         return self.get_all(name, default=None) is not None
@@ -785,15 +771,12 @@ class Config(object):
     def unset_all(self, name):
         try:
             read_git_output(
-                ['config', '--unset-all', '%s.%s' % (self.section, name)],
-                env=self.env,
-                )
+                ['config', '--unset-all', f'{self.section}.{name}'], env=self.env
+            )
+
         except CommandError:
             t, e, traceback = sys.exc_info()
-            if e.retcode == 5:
-                # The name doesn't exist, which is what we wanted anyway...
-                pass
-            else:
+            if e.retcode != 5:
                 raise
 
     def set_recipients(self, name, value):
@@ -866,9 +849,7 @@ class GitObject(object):
                 self.commit_sha1 = self.sha1
             elif self.type == 'tag':
                 try:
-                    self.commit_sha1 = read_git_output(
-                        ['rev-parse', '--verify', '%s^0' % (self.sha1,)]
-                        )
+                    self.commit_sha1 = read_git_output(['rev-parse', '--verify', f'{self.sha1}^0'])
                 except CommandError:
                     # Cannot deref tag to determine commit_sha1
                     self.commit_sha1 = None
@@ -988,10 +969,7 @@ class Change(object):
         skip lines that contain references to unknown variables."""
 
         values = self.get_values(**extra_values)
-        if self._contains_html_diff:
-            self._content_type = 'html'
-        else:
-            self._content_type = 'plain'
+        self._content_type = 'html' if self._contains_html_diff else 'plain'
         values['contenttype'] = self._content_type
 
         for line in template.splitlines():
@@ -1000,8 +978,8 @@ class Change(object):
             try:
                 value = value % values
             except KeyError:
-                t, e, traceback = sys.exc_info()
                 if DEBUG:
+                    t, e, traceback = sys.exc_info()
                     self.environment.log_warning(
                         'Warning: unknown variable %r in the following line; line skipped:\n'
                         '    %s\n'
@@ -1012,8 +990,7 @@ class Change(object):
                     value = addr_header_encode(value, name)
                 else:
                     value = header_encode(value, name)
-                for splitline in ('%s: %s\n' % (name, value)).splitlines(True):
-                    yield splitline
+                yield from ('%s: %s\n' % (name, value)).splitlines(True)
 
     def generate_email_header(self):
         """Generate the RFC 2822 email headers for this Change, a line at a time.
@@ -1065,8 +1042,7 @@ class Change(object):
 
             yield '</pre>\n'
         else:
-            for line in lines:
-                yield line
+            yield from lines
 
     def generate_email(self, push, body_filter=None, extra_header_values={}):
         """Generate an email describing this change.
@@ -1080,21 +1056,16 @@ class Change(object):
         **kwargs, to allow passing other keyword arguments in the
         future (e.g. passing extra values to generate_email_intro()"""
 
-        for line in self.generate_email_header(**extra_header_values):
-            yield line
+        yield from self.generate_email_header(**extra_header_values)
         yield '\n'
         html_escape_val = (self.environment.html_in_intro and
                            self._contains_html_diff)
         intro = self.generate_email_intro(html_escape_val)
         if not self.environment.html_in_intro:
             intro = self._wrap_for_html(intro)
-        for line in intro:
-            yield line
-
+        yield from intro
         if self.environment.commitBrowseURL:
-            for line in self.generate_browse_link(self.environment.commitBrowseURL):
-                yield line
-
+            yield from self.generate_browse_link(self.environment.commitBrowseURL)
         body = self.generate_email_body(push)
         if body_filter is not None:
             body = body_filter(body)
@@ -1138,12 +1109,19 @@ class Change(object):
                 # Chop the trailing LF, we don't want it inside <pre>.
                 line = html_escape(line[:-1])
 
-                if bgcolor or fgcolor:
+                if bgcolor:
                     style = 'display:block; white-space:pre;'
-                    if bgcolor:
-                        style += 'background:#' + bgcolor + ';'
+                    style += f'background:#{bgcolor};'
                     if fgcolor:
-                        style += 'color:#' + fgcolor + ';'
+                        style += f'color:#{fgcolor};'
+                    # Use a <span style='display:block> to color the
+                    # whole line. The newline must be inside the span
+                    # to display properly both in Firefox and in
+                    # text-based browser.
+                    line = "<span style='%s'>%s\n</span>" % (style, line)
+                elif fgcolor:
+                    style = 'display:block; white-space:pre;'
+                    style += f'color:#{fgcolor};'
                     # Use a <span style='display:block> to color the
                     # whole line. The newline must be inside the span
                     # to display properly both in Firefox and in
@@ -1160,8 +1138,7 @@ class Change(object):
         footer = self.generate_email_footer(html_escape_val)
         if not self.environment.html_in_footer:
             footer = self._wrap_for_html(footer)
-        for line in footer:
-            yield line
+        yield from footer
 
     def get_specific_fromaddr(self):
         """For kinds of Changes which specify it, return the kind-specific
@@ -1189,17 +1166,15 @@ class Revision(Change):
         if self.environment.get_scancommitforcc():
             self.cc_recipients = ', '.join(to.strip() for to in self._cc_recipients())
             if self.cc_recipients:
-                self.environment.log_msg(
-                    'Add %s to CC for %s' % (self.cc_recipients, self.rev.sha1))
+                self.environment.log_msg(f'Add {self.cc_recipients} to CC for {self.rev.sha1}')
 
     def _cc_recipients(self):
         cc_recipients = []
         message = read_git_output(['log', '--no-walk', '--format=%b', self.rev.sha1])
         lines = message.strip().split('\n')
         for line in lines:
-            m = re.match(self.CC_RE, line)
-            if m:
-                cc_recipients.append(m.group('to'))
+            if m := re.match(self.CC_RE, line):
+                cc_recipients.append(m['to'])
 
         return cc_recipients
 
@@ -1212,7 +1187,7 @@ class Revision(Change):
 
         max_subject_length = self.environment.get_max_subject_length()
         if max_subject_length > 0 and len(oneline) > max_subject_length:
-            oneline = oneline[:max_subject_length - 6] + ' [...]'
+            oneline = f'{oneline[:max_subject_length - 6]} [...]'
 
         values['rev'] = self.rev.sha1
         values['rev_short'] = self.rev.short
@@ -1230,39 +1205,37 @@ class Revision(Change):
         values['oneline'] = oneline
         values['author'] = self.author
 
-        reply_to = self.environment.get_reply_to_commit(self)
-        if reply_to:
+        if reply_to := self.environment.get_reply_to_commit(self):
             values['reply_to'] = reply_to
 
         return values
 
     def generate_email_header(self, **extra_values):
-        for line in self.expand_header_lines(
-                REVISION_HEADER_TEMPLATE, **extra_values
-                ):
-            yield line
+        yield from self.expand_header_lines(
+            REVISION_HEADER_TEMPLATE, **extra_values
+        )
 
     def generate_browse_link(self, base_url):
         if '%(' not in base_url:
             base_url += '%(id)s'
         url = "".join(self.expand_lines(base_url))
         if self._content_type == 'html':
-            for line in self.expand_lines(LINK_HTML_TEMPLATE,
-                                          html_escape_val=True,
-                                          browse_url=url):
-                yield line
+            yield from self.expand_lines(
+                LINK_HTML_TEMPLATE, html_escape_val=True, browse_url=url
+            )
+
         elif self._content_type == 'plain':
-            for line in self.expand_lines(LINK_TEXT_TEMPLATE,
-                                          html_escape_val=False,
-                                          browse_url=url):
-                yield line
+            yield from self.expand_lines(
+                LINK_TEXT_TEMPLATE, html_escape_val=False, browse_url=url
+            )
+
         else:
             raise NotImplementedError("Content-type %s unsupported. Please report it as a bug.")
 
     def generate_email_intro(self, html_escape_val=False):
-        for line in self.expand_lines(REVISION_INTRO_TEMPLATE,
-                                      html_escape_val=html_escape_val):
-            yield line
+        yield from self.expand_lines(
+            REVISION_INTRO_TEMPLATE, html_escape_val=html_escape_val
+        )
 
     def generate_email_body(self, push):
         """Show this revision."""
@@ -1314,14 +1287,7 @@ class ReferenceChange(Change):
         new = GitObject(newrev)
         rev = new or old
 
-        # The revision type tells us what type the commit is, combined with
-        # the location of the ref we can decide between
-        #  - working branch
-        #  - tracking branch
-        #  - unannotated tag
-        #  - annotated tag
-        m = ReferenceChange.REF_RE.match(refname)
-        if m:
+        if m := ReferenceChange.REF_RE.match(refname):
             area = m.group('area')
             short_refname = m.group('shortname')
         else:
@@ -1372,10 +1338,7 @@ class ReferenceChange(Change):
     def __init__(self, environment, refname, short_refname, old, new, rev):
         Change.__init__(self, environment)
         if old:
-            if new:
-                self.change_type = 'update'
-            else:
-                self.change_type = 'delete'
+            self.change_type = 'update' if new else 'delete'
         elif new:
             self.change_type = 'create'
         else:
@@ -1416,8 +1379,7 @@ class ReferenceChange(Change):
         if self.new:
             values['newrev_type'] = self.new.type
 
-        reply_to = self.environment.get_reply_to_refchange(self)
-        if reply_to:
+        if reply_to := self.environment.get_reply_to_refchange(self):
             values['reply_to'] = reply_to
 
         return values
@@ -1462,15 +1424,12 @@ class ReferenceChange(Change):
         if 'subject' not in extra_values:
             extra_values['subject'] = self.get_subject()
 
-        for line in self.expand_header_lines(
-                self.header_template, **extra_values
-                ):
-            yield line
+        yield from self.expand_header_lines(self.header_template, **extra_values)
 
     def generate_email_intro(self, html_escape_val=False):
-        for line in self.expand_lines(self.intro_template,
-                                      html_escape_val=html_escape_val):
-            yield line
+        yield from self.expand_lines(
+            self.intro_template, html_escape_val=html_escape_val
+        )
 
     def generate_email_body(self, push):
         """Call the appropriate body-generation routine.
@@ -1478,57 +1437,48 @@ class ReferenceChange(Change):
         Call one of generate_create_summary() /
         generate_update_summary() / generate_delete_summary()."""
 
-        change_summary = {
+        yield from {
             'create': self.generate_create_summary,
             'delete': self.generate_delete_summary,
             'update': self.generate_update_summary,
-            }[self.change_type](push)
-        for line in change_summary:
-            yield line
+        }[self.change_type](push)
 
-        for line in self.generate_revision_change_summary(push):
-            yield line
+        yield from self.generate_revision_change_summary(push)
 
     def generate_email_footer(self, html_escape_val):
         return self.expand_lines(self.footer_template,
                                  html_escape_val=html_escape_val)
 
     def generate_revision_change_graph(self, push):
-        if self.showgraph:
-            args = ['--graph'] + self.graphopts
-            for newold in ('new', 'old'):
-                has_newold = False
-                spec = push.get_commits_spec(newold, self)
-                for line in git_log(spec, args=args, keepends=True):
-                    if not has_newold:
-                        has_newold = True
-                        yield '\n'
-                        yield 'Graph of %s commits:\n\n' % (
-                            {'new': 'new', 'old': 'discarded'}[newold],)
-                    yield '  ' + line
-                if has_newold:
+        if not self.showgraph:
+            return
+        args = ['--graph'] + self.graphopts
+        for newold in ('new', 'old'):
+            has_newold = False
+            spec = push.get_commits_spec(newold, self)
+            for line in git_log(spec, args=args, keepends=True):
+                if not has_newold:
+                    has_newold = True
                     yield '\n'
+                    yield 'Graph of %s commits:\n\n' % (
+                        {'new': 'new', 'old': 'discarded'}[newold],)
+                yield f'  {line}'
+            if has_newold:
+                yield '\n'
 
     def generate_revision_change_log(self, new_commits_list):
         if self.showlog:
             yield '\n'
             yield 'Detailed log of new commits:\n\n'
-            for line in read_git_lines(
-                    ['log', '--no-walk'] +
-                    self.logopts +
-                    new_commits_list +
-                    ['--'],
-                    keepends=True,
-                    ):
-                yield line
+            yield from read_git_lines(
+                ['log', '--no-walk'] + self.logopts + new_commits_list + ['--'],
+                keepends=True,
+            )
 
     def generate_new_revision_summary(self, tot, new_commits_list, push):
-        for line in self.expand_lines(NEW_REVISIONS_TEMPLATE, tot=tot):
-            yield line
-        for line in self.generate_revision_change_graph(push):
-            yield line
-        for line in self.generate_revision_change_log(new_commits_list):
-            yield line
+        yield from self.expand_lines(NEW_REVISIONS_TEMPLATE, tot=tot)
+        yield from self.generate_revision_change_graph(push)
+        yield from self.generate_revision_change_log(new_commits_list)
 
     def generate_revision_change_summary(self, push):
         """Generate a summary of the revisions added/removed by this change."""

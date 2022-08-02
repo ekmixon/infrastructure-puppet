@@ -30,11 +30,13 @@ def getJSON(url, creds = None, cookie = None):
     if creds and len(creds) > 0:
         xcreds = creds.encode(encoding='ascii', errors='replace')
         auth = base64.encodebytes(xcreds).decode('ascii', errors='replace').replace("\n", '')
-        headers = {"Content-type": "application/json",
-                     "Accept": "*/*",
-                     "Authorization": "Basic %s" % auth
-                     }
-    
+        headers = {
+            "Content-type": "application/json",
+            "Accept": "*/*",
+            "Authorization": f"Basic {auth}",
+        }
+
+
     request = urllib.request.Request(url, headers = headers)
     result = urllib.request.urlopen(request)
     return json.loads(result.read().decode('utf-8', errors = 'replace'))
@@ -51,7 +53,7 @@ if js:
     # - Check that there isn't a repo by that name already
     # - Check that the repo name is valid
     for item in js:
-        if not 'created' in item:
+        if 'created' not in item:
             reponame = item['name']
             # Validate name
             if len(reponame) < 5 or reponame.find("..") != -1 or reponame.find("/") != -1:
@@ -60,35 +62,42 @@ if js:
             # Get some vars
             notify = item['notify']
             description = item['description'] if 'description' in item else "Unknown"
-            
+
             # If repo isn't there already, make it..
-            if not os.path.exists("/x1/git/repos/asf/%s" % reponame):
-                print("%s is a new repo, creating it..." % reponame)
+            if not os.path.exists(f"/x1/git/repos/asf/{reponame}"):
+                print(f"{reponame} is a new repo, creating it...")
                 try:
                     # Same as we alwyas do, but with editor disabled.
                     inp = subprocess.check_output("EDITOR=NONE /x1/git/asfgit-admin/asf/bin/asfgit-init-git -d \"%s\" -c \"%s\" /tmp/%s" % (description, notify, reponame), shell = True).decode('ascii', 'replace')
-                    subprocess.check_output("mv /tmp/%s /x1/git/repos/asf/%s" % (reponame, reponame), shell = True).decode('ascii', 'replace')
+                    subprocess.check_output(
+                        f"mv /tmp/{reponame} /x1/git/repos/asf/{reponame}",
+                        shell=True,
+                    ).decode('ascii', 'replace')
+
                 except subprocess.CalledProcessError as err:
-                    print("Borked: %s" % err.output)
+                    print(f"Borked: {err.output}")
             else:
                 print("Repo already exists, ignoring this request...sort of")
-            
+
             # Notify reporeq that we've created this repository!
-            print("Notifying https://reporeq.apache.org/ss.lua?created=%s" % reponame)
-            request = urllib.request.Request("https://reporeq.apache.org/ss.lua?created=%s" % reponame)
+            print(f"Notifying https://reporeq.apache.org/ss.lua?created={reponame}")
+            request = urllib.request.Request(
+                f"https://reporeq.apache.org/ss.lua?created={reponame}"
+            )
+
             result = urllib.request.urlopen(request)
-            
+
             # Notify infra@ and private@$pmc that the repo has been set up
             msg = MIMEText("New repository %s was created, as requested by %s.\nYou may view it at: https://git-wip-us.apache.org/repos/asf/%s\n\nWith regards,\nApache Infrastructure." % (reponame, item['requester'], reponame))
-            msg['Subject'] = 'New git repository created: %s' % reponame
+            msg['Subject'] = f'New git repository created: {reponame}'
             msg['From'] = "git@apache.org"
             msg['Reply-To'] = "users@infra.apache.org"
-            msg['To'] = "users@infra.apache.org, private@%s.apache.org" % item['pmc']
-            
+            msg['To'] = f"users@infra.apache.org, private@{item['pmc']}.apache.org"
+
             s = smtplib.SMTP(host='mail.apache.org', port=2025)
             s.send_message(msg)
             s.quit()
-            
+
             # We made a thing!
             created += 1
 

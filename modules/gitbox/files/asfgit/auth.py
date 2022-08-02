@@ -15,15 +15,15 @@ SUBPROJECT_RE=re.compile("-.+$")
 
 
 def authorized_committers(repo_name):
-    writers = set()
-
     # Read the static file to get admin and bot names.
     parser = ConfigParser.SafeConfigParser()
     with open(cfg.auth_file) as handle:
         parser.readfp(handle)
 
-    for admin in parser.get("groups", "gitadmins").split(","):
-        writers.add(util.decode(admin.strip()))
+    writers = {
+        util.decode(admin.strip())
+        for admin in parser.get("groups", "gitadmins").split(",")
+    }
 
     # Override LDAP path present in config for repo?
     if parser.has_option("groups", repo_name):

@@ -24,18 +24,18 @@ def main():
     else:
         if not reponame.endswith('.git'):
             reponame += '.git'
-        if not os.path.exists('/x1/repos/asf/%s' % reponame):
+        if not os.path.exists(f'/x1/repos/asf/{reponame}'):
             print("Status: 404 Not Found")
             print("Content-Type: text/plain")
             print("")
             print("Repository not found")
         else:
             m = re.match(r"(?:incubator-)?([^-.]+)", reponame)
-            pname = m.group(1)
+            pname = m[1]
             pname = WSMAP.get(pname, pname)
-            config = git.GitConfigParser('/x1/repos/asf/%s/config' % reponame)
+            config = git.GitConfigParser(f'/x1/repos/asf/{reponame}/config')
             commitmail = config.get('hooks.asfgit', 'recips')
-            devmail = 'dev@%s.apache.org' % pname
+            devmail = f'dev@{pname}.apache.org'
             if config.has_option('apache', 'dev'):
                 devmail = config.get('apache', 'dev')
             jira = 'link label'

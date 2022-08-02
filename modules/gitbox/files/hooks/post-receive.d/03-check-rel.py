@@ -37,7 +37,7 @@ def main():
         'refname': "??",
         'what': 'rewind'
     }
-    
+
     # Check individual refs and commits for all of
     # our various conditions. Track each ref update
     # so that we can log them if everything is ok.
@@ -46,7 +46,11 @@ def main():
         # If protected ref and rewinding is attempted:
         if ref.is_protected(cfg.protect) and ref.is_rewrite():
             tmplvars['what'] = 'rewind'
-            notify(TMPL_REWRITE % tmplvars, "GitBox: Rewind attempted on %s in %s" % (ref.name, cfg.repo_name))
+            notify(
+                TMPL_REWRITE % tmplvars,
+                f"GitBox: Rewind attempted on {ref.name} in {cfg.repo_name}",
+            )
+
         if ref.is_tag():
             continue
         if cfg.no_merges and ref.is_protected(cfg.protect):
@@ -54,7 +58,10 @@ def main():
                 # If protected ref and merge is attempted:
                 if commit.is_merge():
                     tmplvars['what'] = 'merge'
-                    notify(TMPL_REWRITE % tmplvars, "GitBox: Merge attempted on %s in %s" % (ref.name, cfg.repo_name))
+                    notify(
+                        TMPL_REWRITE % tmplvars,
+                        f"GitBox: Merge attempted on {ref.name} in {cfg.repo_name}",
+                    )
 
 if __name__ == '__main__':
     main()

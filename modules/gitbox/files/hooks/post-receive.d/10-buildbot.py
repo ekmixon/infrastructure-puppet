@@ -79,17 +79,16 @@ encoding = 'utf8'
 changes = []
 
 def connectFailed(error):
-    logging.error("Could not connect to %s: %s"
-            % (master, error.getErrorMessage()))
+    logging.error(f"Could not connect to {master}: {error.getErrorMessage()}")
     return error
 
 
 def addChanges(remote, changei, src='git'):
-    logging.debug("addChanges %s, %s" % (repr(remote), repr(changei)))
+    logging.debug(f"addChanges {repr(remote)}, {repr(changei)}")
     def addChange(c):
-        logging.info("New revision: %s" % c['revision'][:8])
+        logging.info(f"New revision: {c['revision'][:8]}")
         for key, value in c.iteritems():
-            logging.debug("  %s: %s" % (key, value))
+            logging.debug(f"  {key}: {value}")
 
         c['src'] = src
         d = remote.callRemote('addChange', c)
@@ -121,7 +120,7 @@ def connected(remote):
 
 def grab_commit_info(c, rev):
     # Extract information about committer and files using git show
-    f = os.popen("git show --raw --pretty=full %s" % rev, 'r')
+    f = os.popen(f"git show --raw --pretty=full {rev}", 'r')
 
     files = []
     comments = []
@@ -134,24 +133,21 @@ def grab_commit_info(c, rev):
         if line.startswith(4*' '):
             comments.append(line[4:])
 
-        m = re.match(r"^:.*[MAD]\s+(.+)$", line)
-        if m:
-            logging.debug("Got file: %s" % m.group(1))
-            files.append(unicode(m.group(1), encoding=encoding))
+        if m := re.match(r"^:.*[MAD]\s+(.+)$", line):
+            logging.debug(f"Got file: {m[1]}")
+            files.append(unicode(m[1], encoding=encoding))
             continue
 
-        m = re.match(r"^Author:\s+(.+)$", line)
-        if m:
-            logging.debug("Got author: %s" % m.group(1))
-            c['who'] = unicode(m.group(1), encoding=encoding)
+        if m := re.match(r"^Author:\s+(.+)$", line):
+            logging.debug(f"Got author: {m[1]}")
+            c['who'] = unicode(m[1], encoding=encoding)
 
         if re.match(r"^Merge: .*$", line):
             files.append('merge')
 
     c['comments'] = ''.join(comments)
     c['files'] = files
-    status = f.close()
-    if status:
+    if status := f.close():
         logging.warning("git show exited with status %d" % status)
 
 
@@ -161,12 +157,10 @@ def gen_changes(input, branch):
         if not line:
             break
 
-        logging.debug("Change: %s" % line)
+        logging.debug(f"Change: {line}")
 
         m = re.match(r"^([0-9a-f]+) (.*)$", line.strip())
-        c = {'revision': m.group(1),
-             'branch': unicode(branch, encoding=encoding),
-        }
+        c = {'revision': m[1], 'branch': unicode(branch, encoding=encoding)}
 
         if category:
             c['category'] = unicode(category, encoding=encoding)
@@ -177,7 +171,7 @@ def gen_changes(input, branch):
         if project:
             c['project'] = unicode(project, encoding=encoding)
 
-        grab_commit_info(c, m.group(1))
+        grab_commit_info(c, m[1])
         changes.append(c)
 
 
@@ -191,15 +185,21 @@ def gen_create_branch_changes(newrev, refname, branch):
 
     logging.info("Branch `%s' created" % branch)
 
-    f = os.popen("git rev-parse --not --branches"
-            + "| grep -v $(git rev-parse %s)" % refname
-            + "| git rev-list --reverse --pretty=oneline --stdin %s" % newrev,
-            'r')
+    f = os.popen(
+        (
+            (
+                "git rev-parse --not --branches"
+                + f"| grep -v $(git rev-parse {refname})"
+            )
+            + f"| git rev-list --reverse --pretty=oneline --stdin {newrev}"
+        ),
+        'r',
+    )
+
 
     gen_changes(f, branch)
 
-    status = f.close()
-    if status:
+    if status := f.close():
         logging.warning("git rev-list exited with status %d" % status)
 
 
@@ -215,28 +215,27 @@ def gen_update_branch_changes(oldrev, newrev, refname, branch):
     logging.info("Branch `%s' updated %s .. %s"
             % (branch, oldrev[:8], newrev[:8]))
 
-    baserev = commands.getoutput("git merge-base %s %s" % (oldrev, newrev))
-    logging.debug("oldrev=%s newrev=%s baserev=%s" % (oldrev, newrev, baserev))
+    baserev = commands.getoutput(f"git merge-base {oldrev} {newrev}")
+    logging.debug(f"oldrev={oldrev} newrev={newrev} baserev={baserev}")
     if baserev != oldrev:
         c = {'revision': baserev,
              'comments': "Rewind branch",
              'branch': unicode(branch, encoding=encoding),
              'who': "dummy",
         }
-        logging.info("Branch %s was rewound to %s" % (branch, baserev[:8]))
+        logging.info(f"Branch {branch} was rewound to {baserev[:8]}")
         files = []
-        f = os.popen("git diff --raw %s..%s" % (oldrev, baserev), 'r')
+        f = os.popen(f"git diff --raw {oldrev}..{baserev}", 'r')
         while True:
             line = f.readline()
             if not line:
                 break
 
-            file = re.match(r"^:.*[MAD]\s+(.+)$", line).group(1)
-            logging.debug("  Rewound file: %s" % file)
+            file = re.match(r"^:.*[MAD]\s+(.+)$", line)[1]
+            logging.debug(f"  Rewound file: {file}")
             files.append(unicode(file, encoding=encoding))
 
-        status = f.close()
-        if status:
+        if status := f.close():
             logging.warning("git diff exited with status %d" % status)
 
         if category:
@@ -254,12 +253,13 @@ def gen_update_branch_changes(oldrev, newrev, refname, branch):
 
     if newrev != baserev:
         # Not a pure rewind
-        f = os.popen("git rev-list --reverse --pretty=oneline %s..%s"
-                % (baserev, newrev), 'r')
+        f = os.popen(
+            f"git rev-list --reverse --pretty=oneline {baserev}..{newrev}", 'r'
+        )
+
         gen_changes(f, branch)
 
-        status = f.close()
-        if status:
+        if status := f.close():
             logging.warning("git rev-list exited with status %d" % status)
 
 
@@ -282,7 +282,7 @@ def process_changes():
             logging.info("Ignoring refname `%s': Not a branch" % refname)
             continue
 
-        branch = m.group(1)
+        branch = m[1]
 
         # Find out if the branch was created, deleted or updated. Branches
         # being deleted aren't really interesting.
@@ -361,9 +361,7 @@ try:
     level = logging.WARNING
     if options.verbose:
         level -= 10 * options.verbose
-        if level < 0:
-            level = 0
-
+        level = max(level, 0)
     if options.logfile:
         logfile = logging.FileHandler(options.logfile)
         logfile.setLevel(level)

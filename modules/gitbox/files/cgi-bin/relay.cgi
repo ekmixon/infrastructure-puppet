@@ -38,18 +38,16 @@ def gh_to_ldap(username):
     l = ldap.initialize(LDAP_URI)
     # this search for all objectClasses that user is in.
     # change this to suit your LDAP schema
-    search_filter= "(githubUsername=%s)" % username
+    search_filter = f"(githubUsername={username})"
     groups = []
     results = l.search_s(LDAP_BASE, ldap.SCOPE_SUBTREE, search_filter, ['dn',])
-    for res in results:
-        cn = res[0]
-        groups.append(cn)
+    groups.extend(res[0] for res in results)
     return sorted(groups)
 
 
 def log_entry(key, msg):
     now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
-    with open("/x1/gitbox/logs/relay-%s.log" % key, "a") as f:
+    with open(f"/x1/gitbox/logs/relay-{key}.log", "a") as f:
         f.write("[%s] %s\n" % (now, msg))
         f.close()
 
@@ -60,47 +58,65 @@ who = 'unknown'
 how = 'commit'
 if 'pull_request' in PAYLOAD:
     what = 'pr'
-    how = "PR #%s" % PAYLOAD['pull_request']['number']
+    how = f"PR #{PAYLOAD['pull_request']['number']}"
 elif 'issue' in PAYLOAD:
     what = 'issue'
-    how = "Issue #%s" % PAYLOAD['issue']['number']
+    how = f"Issue #{PAYLOAD['issue']['number']}"
     if 'pull_request' in PAYLOAD['issue']:
         what = 'pr_comment'
-        how = "PR #%s" % PAYLOAD['issue']['number']
+        how = f"PR #{PAYLOAD['issue']['number']}"
     elif 'comment' in PAYLOAD['issue']:
         what = 'issue_comment'
 
 if what == 'pr':
-  # Is Proper Committer?
-  who = PAYLOAD['pull_request']['user']['login']
-  is_asf = gh_to_ldap(who)
-  # Deemed safe committer by .asf.yaml?
-  if not is_asf and os.path.exists("/x1/gitbox/conf/ghprb-whitelist/%s.txt" % repo):
-        ghprb_whitelist = open("/x1/gitbox/conf/ghprb-whitelist/%s.txt" % repo).read().split("\n")
+    # Is Proper Committer?
+    who = PAYLOAD['pull_request']['user']['login']
+    is_asf = gh_to_ldap(who)
+      # Deemed safe committer by .asf.yaml?
+    if not is_asf and os.path.exists(
+        f"/x1/gitbox/conf/ghprb-whitelist/{repo}.txt"
+    ):
+        ghprb_whitelist = (
+            open(f"/x1/gitbox/conf/ghprb-whitelist/{repo}.txt")
+            .read()
+            .split("\n")
+        )
+
         if PAYLOAD['pull_request']['user']['login'] in ghprb_whitelist:
             is_asf = True
-            log_entry('whitelist', "%s [%s]: %s payload for %s allowed via GHPRB Whitelist for %s" % (DATE, GUID, what, repo, PAYLOAD['pull_request']['user']['login']))
-  # If we don't trust, abort immediately
-  if not is_asf:
-    print("Status: 204 Handled\r\n\r\n")
-    sys.exit(0)
+            log_entry(
+                'whitelist',
+                f"{DATE} [{GUID}]: {what} payload for {repo} allowed via GHPRB Whitelist for {PAYLOAD['pull_request']['user']['login']}",
+            )
 
-if what == 'pr_comment':
-  # Is Proper Committer?
-  who = PAYLOAD['comment']['user']['login']
-  is_asf = gh_to_ldap(who)
-  # Deemed safe committer by .asf.yaml?
-  if not is_asf and os.path.exists("/x1/gitbox/conf/ghprb-whitelist/%s.txt" % repo):
-        ghprb_whitelist = open("/x1/gitbox/conf/ghprb-whitelist/%s.txt" % repo).read().split("\n")
+    # If we don't trust, abort immediately
+    if not is_asf:
+      print("Status: 204 Handled\r\n\r\n")
+      sys.exit(0)
+
+elif what == 'pr_comment':
+    # Is Proper Committer?
+    who = PAYLOAD['comment']['user']['login']
+    is_asf = gh_to_ldap(who)
+      # Deemed safe committer by .asf.yaml?
+    if not is_asf and os.path.exists(
+        f"/x1/gitbox/conf/ghprb-whitelist/{repo}.txt"
+    ):
+        ghprb_whitelist = (
+            open(f"/x1/gitbox/conf/ghprb-whitelist/{repo}.txt")
+            .read()
+            .split("\n")
+        )
+
         if PAYLOAD['comment']['user']['login'] in ghprb_whitelist:
             is_asf = True
             log_entry('whitelist', "%s [%s]: payload for %s allowed via GHPRB Whitelist for %s" % (DATE, GUID, what, repo, PAYLOAD['comment']['user']['login']))
-  # If we don't trust, abort immediately
-  if not is_asf:
-    print("Status: 204 Handled\r\n\r\n")
-    sys.exit(0)
+    # If we don't trust, abort immediately
+    if not is_asf:
+      print("Status: 204 Handled\r\n\r\n")
+      sys.exit(0)
 
-    
+
 for key, entry in YML['relays'].items():
     if fnmatch.fnmatch(repo, entry['repos']): # If yaml entry glob-matches the repo, then...
         hook = entry.get('hook') # Hook URL to post to
@@ -115,6 +131,10 @@ for key, entry in YML['relays'].items():
                     rv = requests.post(hook, json = PAYLOAD, headers = HEADERS)
                 log_entry(key, "%s [%s]: Delivered %s payload from %s for %s (%s) to %s: %u\n" % (DATE, GUID, what, who, repo, how, hook, rv.status_code))
         except requests.exceptions.RequestException as e:
-            log_entry(key, "%s [%s]: Could not deliver %s payload from %s for %s (%s): %s" % (DATE, GUID, what, who, hook, how, e))
-            
+            log_entry(
+                key,
+                f"{DATE} [{GUID}]: Could not deliver {what} payload from {who} for {hook} ({how}): {e}",
+            )
+
+
 print("Status: 204 Handled\r\n\r\n")

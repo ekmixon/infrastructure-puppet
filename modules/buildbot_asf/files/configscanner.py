@@ -81,8 +81,7 @@ BuildBot
 def read_chunk(req):
     while True:
         try:
-            line = req.readline().strip()
-            if line:
+            if line := req.readline().strip():
                 yield line
             else:
                 print("No more lines?")

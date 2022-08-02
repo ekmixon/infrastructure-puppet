@@ -36,10 +36,7 @@ class Commit(object):
         self.committed_unix = int(self.committed_unix)
         parts = self.committer_email.split(u"@")
         self.committer_uname = parts[0]
-        if len(parts) > 1:
-            self.committer_domain = parts[1]
-        else:
-            self.committer_domain = ""
+        self.committer_domain = parts[1] if len(parts) > 1 else ""
 
     def __cmp__(self, other):
         return cmp(self.committed_unix, other.committed_unix)
@@ -102,7 +99,7 @@ class RefUpdate(object):
             if r.strip() == self.name:
                 continue
             if r.strip().startswith("refs/heads/"):
-                refs.append("^%s" % r.strip())
+                refs.append(f"^{r.strip()}")
         args = ["rev-list"]
         if num is not None:
             args += ["-n", str(num)]
@@ -113,7 +110,7 @@ class RefUpdate(object):
         if self.created():
             args.append(self.newsha)
         else:
-            args.append("%s..%s" % (self.oldsha, self.newsha))
+            args.append(f"{self.oldsha}..{self.newsha}")
         for line in run.git(*args)[1].splitlines():
             sha = line.strip()
             yield Commit(self, sha)
@@ -126,9 +123,7 @@ class RefUpdate(object):
 
 
 def stream_refs(handle):
-    line = handle.readline()
-    while line:
+    while line := handle.readline():
         oldsha, newsha, name = line.split(None, 2)
         yield RefUpdate(name.strip(), oldsha, newsha)
-        line = handle.readline()
 

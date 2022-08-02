@@ -53,120 +53,111 @@ xform = cgi.FieldStorage();
 
 """ Get a POST/GET value """
 def getvalue(key):
-    val = xform.getvalue(key)
-    if val:
-        return val
-    else:
-        return None
+  return val if (val := xform.getvalue(key)) else None
 
 
 """ Get LDAP groups a user belongs to """
 def ldap_groups(uid):
-    ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
-    l = ldap.initialize(LDAP_URI)
+  ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
+  l = ldap.initialize(LDAP_URI)
     # this search for all objectClasses that user is in.
     # change this to suit your LDAP schema
-    search_filter= "(|(owner=%s)(owner=uid=%s,ou=people,dc=apache,dc=org))" % (uid, uid)
-    try:
-        groups = []
-        podlings = {}
+  search_filter = f"(|(owner={uid})(owner=uid={uid},ou=people,dc=apache,dc=org))"
+  try:
+    groups = []
+    podlings = {}
 
-        # Is requester in infra-root??
-        infra = getStandardGroup('infrastructure-root', 'cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org', "member")
-        if infra and uid in infra:
-            groups.append('infrastructure')
-            search_filter= "(|(owner=*)(owner=uid=*,ou=people,dc=apache,dc=org))"
+    # Is requester in infra-root??
+    infra = getStandardGroup('infrastructure-root', 'cn=infrastructure-root,ou=groups,ou=services,dc=apache,dc=org', "member")
+    if infra and uid in infra:
+        groups.append('infrastructure')
+        search_filter= "(|(owner=*)(owner=uid=*,ou=people,dc=apache,dc=org))"
 
-        # Is requester IPMC?
-        isIPMC = False
-        ipmc = getStandardGroup('incubator')
-        if ipmc and uid in ipmc:
-            isIPMC = True
+    ipmc = getStandardGroup('incubator')
+    isIPMC = bool(ipmc and uid in ipmc)
+    LDAP_BASE = "ou=project,ou=groups,dc=apache,dc=org"
+    results = l.search_s(LDAP_BASE, ldap.SCOPE_SUBTREE, search_filter, ['cn',])
+    for res in results:
+      cn = res[1]['cn'][0]
+      if (cn in PMCS) or (uid in infra): # Either must be on gitbox or requester from infra-root
+        groups.append(cn) # each res is a tuple: ('cn=full,ou=ldap,dc=uri', {'cn': ['tlpname']})
+      if cn in PMCS and PMCS[cn] == "podling":
+          podlings[cn] = True
 
+    # If in IPMC, add all approved podlings not there yet.
+    if isIPMC:
+        for cn in PMCS:
+            if PMCS[cn] == "podling" and cn not in groups:
+                groups.append(cn)
+                podlings[cn] =  True
 
-        LDAP_BASE = "ou=project,ou=groups,dc=apache,dc=org"
-        results = l.search_s(LDAP_BASE, ldap.SCOPE_SUBTREE, search_filter, ['cn',])
-        for res in results:
-            cn = res[1]['cn'][0]
-            if (cn in PMCS) or (uid in infra): # Either must be on gitbox or requester from infra-root
-                groups.append(cn) # each res is a tuple: ('cn=full,ou=ldap,dc=uri', {'cn': ['tlpname']})
-                if cn in PMCS and PMCS[cn] == "podling":
-                    podlings[cn] = True
-
-        # If in IPMC, add all approved podlings not there yet.
-        if isIPMC:
-            for cn in PMCS:
-                if PMCS[cn] == "podling" and cn not in groups:
-                    groups.append(cn)
-                    podlings[cn] =  True
-
-        return [sorted(groups), sorted(podlings), uid in infra]
-    except Exception as err:
-        pass
-    return [[], {}, False]
+    return [sorted(groups), sorted(podlings), uid in infra]
+  except Exception as err:
+      pass
+  return [[], {}, False]
 
 def getStandardGroup(group, ldap_base = None, what = "owner"):
-    """ Gets the list of availids in a standard group (pmcs, services, podlings) """
+  """ Gets the list of availids in a standard group (pmcs, services, podlings) """
     # First, check if there's a hardcoded member list for this group
     # If so, read it and return that instead of trying LDAP
-    if CONFIG.has_section('group:%s' % group) and CONFIG.has_option('group:%s' % group, 'members'):
-        return CONFIG.get('group:%s' % group, 'members').split(' ')
-    groupmembers = []
+  if CONFIG.has_section(f'group:{group}') and CONFIG.has_option(
+      f'group:{group}', 'members'):
+    return CONFIG.get(f'group:{group}', 'members').split(' ')
+  groupmembers = []
     # This might fail in case of ldap bork, if so we'll return nothing.
-    try:
-        ldapClient = ldap.initialize(LDAP_URI)
-        ldapClient.set_option(ldap.OPT_REFERRALS, 0)
+  try:
+    ldapClient = ldap.initialize(LDAP_URI)
+    ldapClient.set_option(ldap.OPT_REFERRALS, 0)
 
-        ldapClient.bind(LDAP_USER, LDAP_PASSWORD)
+    ldapClient.bind(LDAP_USER, LDAP_PASSWORD)
 
         # Default LDAP base if not specified
-        if not ldap_base:
-            ldap_base = "cn=%s,ou=project,ou=groups,dc=apache,dc=org" % group
+    if not ldap_base:
+      ldap_base = f"cn={group},ou=project,ou=groups,dc=apache,dc=org"
 
-        # This is using the new podling/etc LDAP groups defined by Sam
-        results = ldapClient.search_s(ldap_base, ldap.SCOPE_BASE)
+    # This is using the new podling/etc LDAP groups defined by Sam
+    results = ldapClient.search_s(ldap_base, ldap.SCOPE_BASE)
 
-        for result in results:
-            result_dn = result[0]
-            result_attrs = result[1]
-            if what in result_attrs:
-                for member in result_attrs[what]:
-                    m = UID_RE.match(member) # results are in the form uid=janedoe,dc=... so weed out the uid
-                    if m:
-                        groupmembers.append(m.group(1))
+    for result in results:
+      result_dn = result[0]
+      result_attrs = result[1]
+      if what in result_attrs:
+        for member in result_attrs[what]:
+          if m := UID_RE.match(member):
+            groupmembers.append(m.group(1))
 
-        ldapClient.unbind_s()
-        groupmembers = sorted(groupmembers) #alphasort
-    except Exception as err:
-        print(err)
-        groupmembers = None
-    return groupmembers
+    ldapClient.unbind_s()
+    groupmembers = sorted(groupmembers) #alphasort
+  except Exception as err:
+      print(err)
+      groupmembers = None
+  return groupmembers
 
 
 def createRepo(repo, title, pmc):
-    url = "https://api.github.com/orgs/apache/repos"
-    r = requests.post(url, data = json.dumps({
-            'name': repo,
-            'description': title,
-            'homepage': "https://%s.apache.org/" % pmc,
-            'private': False,
-            'has_issues': False,
-            'has_projects': False,
-            'has_wiki': False
-            }),
-            headers = {'Authorization': "token %s" % ORG_READ_TOKEN})
+  url = "https://api.github.com/orgs/apache/repos"
+  r = requests.post(
+      url,
+      data=json.dumps({
+          'name': repo,
+          'description': title,
+          'homepage': f"https://{pmc}.apache.org/",
+          'private': False,
+          'has_issues': False,
+          'has_projects': False,
+          'has_wiki': False,
+      }),
+      headers={'Authorization': f"token {ORG_READ_TOKEN}"},
+  )
 
-    #201 == New repo created
-    if r.status_code == 201:
-        return True
-    # Otherwise, exists already or other error?
-    else:
-        print("Status: 200 Okay\r\nContent-Type: application/json\r\n\r\n")
-        print(json.dumps({
-            'created': False,
-            'error': r.text
-        }))
-        return False
+  if r.status_code == 201:
+    return True
+  print("Status: 200 Okay\r\nContent-Type: application/json\r\n\r\n")
+  print(json.dumps({
+      'created': False,
+      'error': r.text
+  }))
+  return False
 
 def main():
     action = xform.getvalue("action")

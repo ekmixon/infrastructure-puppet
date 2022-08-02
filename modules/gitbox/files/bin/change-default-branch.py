@@ -45,19 +45,23 @@ CONFIG_FILE = "/x1/gitbox/matt/tools/grouper.cfg"  # config file with GH token i
 
 def change_default_branch(repo: str, branch: str, token: str):
     repo = repo.replace(".git", "")
-    headers = {"Authorization": "token %s" % token, "Content-Type": "application/json"}
-    data = {"name": repo, "default_branch": branch}
-    url = "https://api.github.com/repos/apache/%s" % repo
+    headers = {
+        "Authorization": f"token {token}",
+        "Content-Type": "application/json",
+    }
 
-    print("Requesting branch change for %s on GitHub to %s..." % (repo, branch))
+    data = {"name": repo, "default_branch": branch}
+    url = f"https://api.github.com/repos/apache/{repo}"
+
+    print(f"Requesting branch change for {repo} on GitHub to {branch}...")
     requests.patch(url, json=data, headers=headers)
 
     repo += ".git"
-    print("Changing HEAD file locally on GitBox for %s to %s..." % (repo, branch))
+    print(f"Changing HEAD file locally on GitBox for {repo} to {branch}...")
     with open(os.path.join(REPO_ROOT, repo, "HEAD"), "w") as f:
-        f.write("ref: refs/heads/%s" % branch)
+        f.write(f"ref: refs/heads/{branch}")
 
-    print("Done with %s" % repo)
+    print(f"Done with {repo}")
 
 
 def main():
@@ -79,8 +83,7 @@ def main():
     token = cfg.get("github", "token")
 
     for line in sys.stdin.readlines():
-        line = line.strip()
-        if line:
+        if line := line.strip():
             if " " in line:
                 repo, branch = line.split(" ", 1)
             else:
@@ -88,7 +91,7 @@ def main():
                 branch = defbranch
             repo = repo.replace(".git", "")
             repo += ".git"
-            print("Processing %s" % repo)
+            print(f"Processing {repo}")
             change_default_branch(repo, branch, token)
 
 

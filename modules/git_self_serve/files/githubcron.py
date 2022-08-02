@@ -27,10 +27,12 @@ def getJSON(url, creds = None, cookie = None):
     if creds and len(creds) > 0:
         xcreds = creds.encode(encoding='ascii', errors='replace')
         auth = base64.encodebytes(xcreds).decode('ascii', errors='replace').replace("\n", '')
-        headers = {"Content-type": "application/json",
-                     "Accept": "*/*",
-                     "Authorization": "Basic %s" % auth
-                     }
+        headers = {
+            "Content-type": "application/json",
+            "Accept": "*/*",
+            "Authorization": f"Basic {auth}",
+        }
+
 
     request = urllib.request.Request(url, headers = headers)
     result = urllib.request.urlopen(request)
@@ -44,7 +46,7 @@ created = 0
 # If queue is valid:
 if js:
     print("analysing %u items" % len(js))
-    
+
     # For each item:
     # - Check that it hasn't been mirrored yet
     # - Check that a repo with this name doesn't exist already
@@ -52,7 +54,12 @@ if js:
     # - Mirror repo if all is okay
     for item in js:
         # Make sure this is a GH integration request AND it's been mirrored more than a day ago, so GH caught up.
-        if not 'githubbed' in item and item['github'] == True and 'mirrordate' in item and item['mirrordate'] < (time.time()-86400):
+        if (
+            'githubbed' not in item
+            and item['github'] == True
+            and 'mirrordate' in item
+            and item['mirrordate'] < (time.time() - 86400)
+        ):
             reponame = item['name']
             # Check valid name
             if len(reponame) < 5 or reponame.find("..") != -1 or reponame.find("/") != -1:
@@ -63,28 +70,35 @@ if js:
             description = item['description'] if 'description' in item else "Unknown"
 
             # Make sure the repo exists!
-            if os.path.exists("/x1/git/mirrors/%s" % reponame):
-                print("%s is there, adding web hooks" % reponame)
+            if os.path.exists(f"/x1/git/mirrors/{reponame}"):
+                print(f"{reponame} is there, adding web hooks")
                 try:
                     xreponame = reponame.replace(".git", "") # Cut off the .git part, so GH will not bork
-                    inp = subprocess.check_output("/usr/local/etc/git_self_serve/add-webhook.sh %s" % xreponame, shell = True).decode('ascii', 'replace')
+                    inp = subprocess.check_output(
+                        f"/usr/local/etc/git_self_serve/add-webhook.sh {xreponame}",
+                        shell=True,
+                    ).decode('ascii', 'replace')
+
                 except subprocess.CalledProcessError as err:
-                    print("Borked: %s" % err.output)
+                    print(f"Borked: {err.output}")
                     continue
             else:
                 print("Repo doesn't exist, ignoring this request...sort of")
 
             # Notify reporeq that we've GH'ed this repository!
-            print("Notifying https://reporeq.apache.org/ss.lua?githubbed=%s" % reponame)
-            request = urllib.request.Request("https://reporeq.apache.org/ss.lua?githubbed=%s" % reponame)
+            print(f"Notifying https://reporeq.apache.org/ss.lua?githubbed={reponame}")
+            request = urllib.request.Request(
+                f"https://reporeq.apache.org/ss.lua?githubbed={reponame}"
+            )
+
             result = urllib.request.urlopen(request)
 
             # Inform infra@ and private@$pmc that the mirror has been set up
             msg = MIMEText("New repository %s has now had GitHub integration enabled!\n\nWith regards,\nApache Infrastructure." % (reponame))
-            msg['Subject'] = 'Github integration set up: %s' % reponame
+            msg['Subject'] = f'Github integration set up: {reponame}'
             msg['From'] = "git@apache.org"
             msg['Reply-To'] = "users@infra.apache.org"
-            msg['To'] = "users@infra.apache.org, private@%s.apache.org" % item['pmc']
+            msg['To'] = f"users@infra.apache.org, private@{item['pmc']}.apache.org"
 
             s = smtplib.SMTP(host='mail.apache.org', port=2025)
             s.send_message(msg)

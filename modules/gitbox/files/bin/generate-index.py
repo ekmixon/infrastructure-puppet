@@ -27,16 +27,16 @@ def newest(path):
     return os.stat(max(paths, key=os.path.getmtime)).st_mtime
 
 def getActivity():
-    
+
     # Get Whimsy data first
     PODLINGS = requests.get(PODLINGS_URL).json()
     TLPS = requests.get(TLPS_URL).json()
     RETIRED = requests.get(RETIRED_URL).json()
-    
+
     repos = [x for x in os.listdir(GITPATH) if
                  os.path.isdir(os.path.join(GITPATH, x))
             ]
-    
+
     projects = {}
     gitrepos = {}
     outjson = {
@@ -45,15 +45,15 @@ def getActivity():
     }
     comcounts = {}
     for repo in repos:
-        
+
         repopath = os.path.join(GITPATH, repo)
-        
+
         # Get repo description
         repodesc = "No Description"
         dpath = os.path.join(repopath, 'description')
         if os.path.exists(dpath):
             repodesc = open(dpath).read().strip()
-        
+
         # Get archive status
         nocommit = os.path.exists(os.path.join(repopath, "nocommit"))
         if nocommit: repodesc += " (archived)"
@@ -63,13 +63,13 @@ def getActivity():
         last_hour = int(time.time())
         last_hour = int(last_hour - (last_hour % 3600))
         try:
-            lcommit = int(newest(repopath+"/objects"))
+            lcommit = int(newest(f"{repopath}/objects"))
         except:
             pass # if it failed (no commits etc), default to no commits
-        
+
         now = time.time()
         ago = now - lcommit
-        
+
         # Make 'N ago..' string
         agotxt = "No commits"
         if lcommit == 0:
@@ -100,22 +100,22 @@ def getActivity():
             agotxt = "%u days ago" % round(ago/86400)
         else:
             agotxt = "%u weeks ago" % round(ago/(86400*7))
-        
+
         if lcommit == 0:
             agotxt = "<span style='color: #777; font-style: italic;'>%s</span>" % agotxt
         elif ago <= 172800:
             agotxt = "<span style='color: #070;'>%s</span>" % agotxt
-            
+
         # Store in project hash
         r = re.match(r"^(?:incubator-(?:retired-)?)?(empire-db|[^-.]+).*", repo)
-        project = r.group(1)
+        project = r[1]
         projects[project] = projects.get(project, [])
         repo = repo.replace(".git", "") # Crop this for sorting reasons (INFRA-15952)
         projects[project].append(repo)
         if len(repodesc) > 64:
-            repodesc = repodesc[:61] + "..."
+            repodesc = f"{repodesc[:61]}..."
         gitrepos[repo] = [agotxt, repodesc, lcommit, nocommit]
-    
+
     html = ""
     a = 0
     for project in sorted(projects):
@@ -130,13 +130,13 @@ def getActivity():
             pname = "Apache " + PODLINGS['podling'][project]['name'] + " (Retired Podling)"
         elif project in PODLINGS['podling'] and PODLINGS['podling'][project]['status'] != 'graduated':
             pname = "Apache " + PODLINGS['podling'][project]['name'] + " (Incubating)"
-        
+
         outjson['projects'][project] = {
             'domain': project,
             'description': pname,
             'repositories': {}
         }
-        
+
         table = """
 <table class="tbl%u" id="%s">
 <thead>
@@ -172,7 +172,7 @@ def getActivity():
         </td>
     </tr>
 """ % (nclass, repo, repo, gitrepos[repo][1],gitrepos[repo][0], repo, repo, repo, repo)
-    
+
         table += "</table>"
         html += table
     now = datetime.datetime.now().isoformat()

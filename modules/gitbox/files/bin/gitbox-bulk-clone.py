@@ -49,23 +49,30 @@ def getGitHubRepos():
         for repo in data:
             rname = repo['name']
             if not repo['description']:
-                print("Warning: %s has no description set! " % rname)
-                repos[rname] = "Apache %s" % rname.split('-')[0]
+                print(f"Warning: {rname} has no description set! ")
+                repos[rname] = f"Apache {rname.split('-')[0]}"
             else:
                 repos[rname] = repo['description'].replace("Mirror of ", "")
     return repos
 
 def rmWebhooks(repo):
     """Checks for and removes stale web hooks"""
-    url = "https://api.github.com/repos/apache/%s/hooks?access_token=%s" % (repo, ORG_TOKEN)
+    url = f"https://api.github.com/repos/apache/{repo}/hooks?access_token={ORG_TOKEN}"
+
     response = urllib2.urlopen(url)
     data = json.load(response)
     for hook in data:
         # Is this an old git-wip hook?
-        if 'config' in hook and hook['config'].get('url'):
-            if 'git-wip' in hook['config']['url'] or 'git1-us-east' in hook['config']['url']:
-                print("Removing stale webhook %s (%s)" % (hook['url'], hook['config']['url']))
-                requests.delete("%s?access_token=%s" % (hook['url'], ORG_TOKEN))
+        if (
+            'config' in hook
+            and hook['config'].get('url')
+            and (
+                'git-wip' in hook['config']['url']
+                or 'git1-us-east' in hook['config']['url']
+            )
+        ):
+            print(f"Removing stale webhook {hook['url']} ({hook['config']['url']})")
+            requests.delete(f"{hook['url']}?access_token={ORG_TOKEN}")
             
 
 if len(sys.argv) < 2:
@@ -74,9 +81,9 @@ if len(sys.argv) < 2:
     print("gitbox-bulk-clone couchdb")
     print("gitbox-bulk-clone httpd cvs@httpd.apache.org")
     sys.exit(-1)
-    
+
 project = sys.argv[1]
-commitlist = "commits@%s.apache.org" % project # Unless otherwise specified, default to commits@project.apache.org here.
+commitlist = f"commits@{project}.apache.org"
 
 if len(sys.argv) > 2 and sys.argv[2] != 'dryrun':
     commitlist = sys.argv[2]
@@ -88,23 +95,22 @@ repos = getGitHubRepos()
 r = 0
 for repo in repos:
     # Get foo-bar.git and foo.git for project foo
-    if repo.startswith(project+"-") or repo == project:
+    if repo.startswith(f"{project}-") or repo == project:
         # Set defaults: github URL, repo description and local file path
-        repourl = "https://github.com/apache/%s.git" % repo
+        repourl = f"https://github.com/apache/{repo}.git"
         description = repos[repo]
-        location = "/x1/repos/asf/%s.git" % repo
+        location = f"/x1/repos/asf/{repo}.git"
         # Skip if the repo is already on gitbox
         if os.path.exists(location):
-            print("Skipping %s.git as it already exists on gitbox!" % repo)
-        # Otherwise, run gitbox-clone if not a dry run.
+            print(f"Skipping {repo}.git as it already exists on gitbox!")
         else:
-            print("Cloning %s (%s) to gitbox..." % (repourl, description))
+            print(f"Cloning {repourl} ({description}) to gitbox...")
             if 'dryrun' not in sys.argv:
                 try:
                     subprocess.check_output(['/usr/local/bin/python', '/x1/gitbox/bin/gitbox-clone', '-d', description, '-c', commitlist, repourl, location])
                     print("Done cloning, chowning...")
                     subprocess.check_output(['/bin/chown', '-R', 'www-data', location])
-                    print("Successfully cloned %s" % location)
+                    print(f"Successfully cloned {location}")
                     rmWebhooks(repo)
                 except subprocess.CalledProcessError as err:
                     print("FAILED! Output was:")
@@ -112,7 +118,7 @@ for repo in repos:
                     yn = input("Should we continue with other repos? (y/n): ")
                     if yn.lower() == "n":
                         print("Aborting bulk clone!")
-                        sys.exit(-1)                    
+                        sys.exit(-1)
             else:
                 print("Dry run, not exetucing for reals...")
             r += 1

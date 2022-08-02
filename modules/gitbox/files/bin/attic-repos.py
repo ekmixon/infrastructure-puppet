@@ -46,7 +46,7 @@ def update_github_repo(token, old):
     Renames a repository on GitHub by sending a PATCH request.
     """
     # API URL for archiving
-    url = "https://api.github.com/repos/apache/%s" % old
+    url = f"https://api.github.com/repos/apache/{old}"
 
     # Headers - json payload + creds
     headers = {
@@ -103,9 +103,9 @@ def update_local_repo(old, project):
 
 # Demand being run by www-data or git
 me = pwd.getpwuid(os.getuid()).pw_name
-if me != "www-data" and me != "git":
+if me not in ["www-data", "git"]:
     print("You must run this as either www-data (on gitbox/git-wip) or git (on git.a.o)!")
-    print("You are running as: %s" % me)
+    print(f"You are running as: {me}")
     sys.exit(-1)
 
 # Expect one project name passed on, and only one!
@@ -115,16 +115,15 @@ if len(sys.argv) == 2:
     if os.path.isdir(REPO_ROOT):
         pr = 0
         for repo in os.listdir(REPO_ROOT):
-            m = re.match(r"^%s(-.+)?(\.git)?$"% PROJECT, repo)
-            if m:
+            if m := re.match(r"^%s(-.+)?(\.git)?$" % PROJECT, repo):
                 pr += 1
-                print("Archiving %s..." % (repo))
+                print(f"Archiving {repo}...")
                 if not DEBUG:
                     update_local_repo(repo, PROJECT)
                     update_github_repo(TOKEN, repo)
         print("All done, processed %u repositories!" % pr)
     else:
-        print("%s does not seem to be a directory, aborting!" % REPO_ROOT)
+        print(f"{REPO_ROOT} does not seem to be a directory, aborting!")
 else:
     print("Usage: attic-repos.py $project")
     print("Example: attic-repos.py blur")

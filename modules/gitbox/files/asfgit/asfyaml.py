@@ -46,17 +46,17 @@ COLLABORATOR_FILE = "github_collaborators.txt"
 MAX_COLLABORATORS = 10  # We don't want more than 10 external collaborators at any given time.
 
 def jenkins(cfg, yml):
-    
+
     # GitHub PR Builder Whitelist for known (safe) contributors
     ref = yml.get('refname', 'master').replace('refs/heads/', '')
-    if ref == 'master' or ref == 'trunk':
+    if ref in ['master', 'trunk']:
         ghprb_whitelist = yml.get('github_whitelist')
         if ghprb_whitelist and type(ghprb_whitelist) is list:
             if len(ghprb_whitelist) > 10:
                 raise Exception("GitHub whitelist cannot be more than 10 people!")
             ghwl = "\n".join(ghprb_whitelist)
             print("Updating GHPRB whitelist for GitHub...")
-            with open("/x1/gitbox/conf/ghprb-whitelist/%s.txt" % cfg.repo_name, "w") as f:
+            with open(f"/x1/gitbox/conf/ghprb-whitelist/{cfg.repo_name}.txt", "w") as f:
                 f.write(ghwl)
                 f.close()
             print("Whitelist updated!")
@@ -89,7 +89,7 @@ def custombuild(cfg, yml):
 
     # infer project name
     m = re.match(r"(?:incubator-)?([^-.]+)", cfg.repo_name)
-    pname = m.group(1)
+    pname = m[1]
     pname = WSMAP.get(pname, pname)
 
     # Get notification list
@@ -105,93 +105,95 @@ def custombuild(cfg, yml):
     if type(buildscript) is not str:
         raise ValueError("Buildscript invocation is not a string")
     else:
-            payload = {
-                "method": "force",
-                "jsonrpc": "2.0",
-                "id":0,
-                "params":{
-                    "reason": "Triggered custom builder via .asf.yaml by %s" % cfg.committer,
-                    "builderid": "8",
-                    "source": "https://gitbox.apache.org/repos/asf/%s.git" % cfg.repo_name,
-                    "sourcebranch": ref,
-                    "outputbranch": target,
-                    "project": pname,
-                    "buildscript": buildscript,
-                    "outputdir": outputdir,
-                    "notify": pnotify,
-                    "notoc": no_toc
-                }
-            }
+        payload = {
+            "method": "force",
+            "jsonrpc": "2.0",
+            "id": 0,
+            "params": {
+                "reason": f"Triggered custom builder via .asf.yaml by {cfg.committer}",
+                "builderid": "8",
+                "source": f"https://gitbox.apache.org/repos/asf/{cfg.repo_name}.git",
+                "sourcebranch": ref,
+                "outputbranch": target,
+                "project": pname,
+                "buildscript": buildscript,
+                "outputdir": outputdir,
+                "notify": pnotify,
+                "notoc": no_toc,
+            },
+        }
+
     print("Triggering custom build...")
     s.post('https://ci2.apache.org/api/v2/forceschedulers/custombuild_websites', json = payload)
     print("Done!")
 
 def jekyll(cfg, yml):
     """ Jekyll auto-build """
-    
+
     # Don't build from asf-site, like...ever
     ref = yml.get('refname', 'master').replace('refs/heads/', '')
     if ref == 'asf-site':
         print("Not auto-building from asf-site, ever...")
         return
-    
+
     # If whoami specified, ignore this payload if branch does not match
     whoami = yml.get('whoami')
     if whoami and whoami != ref:
         return
-    
+
     # Get target branch, if any, default to same branch
     target = yml.get('target', ref)
-    
+
     # Get optional theme
     theme = yml.get('theme', 'theme')
 
     # Get optional outputdirectory name, Default 'output'
     outputdir = yml.get('outputdir', 'output')
-    
+
     # infer project name
     m = re.match(r"(?:incubator-)?([^-.]+)", cfg.repo_name)
-    pname = m.group(1)
+    pname = m[1]
     pname = WSMAP.get(pname, pname)
-    
+
     # Get notification list
     pnotify = yml.get('notify', cfg.recips[0])
-    
+
     # Contact buildbot 2
     bbusr, bbpwd = open("/x1/gitbox/auth/bb2.txt").read().strip().split(':', 1)
     import requests
     s = requests.Session()
     s.get("https://ci2.apache.org/auth/login", auth= (bbusr, bbpwd))
-    
+
     payload = {
         "method": "force",
         "jsonrpc": "2.0",
-        "id":0,
-        "params":{
-            "reason": "Triggered jekyll auto-build via .asf.yaml by %s" % cfg.committer,
+        "id": 0,
+        "params": {
+            "reason": f"Triggered jekyll auto-build via .asf.yaml by {cfg.committer}",
             "builderid": "7",
-            "source": "https://gitbox.apache.org/repos/asf/%s.git" % cfg.repo_name,
+            "source": f"https://gitbox.apache.org/repos/asf/{cfg.repo_name}.git",
             "sourcebranch": ref,
             "outputbranch": target,
             "outputdir": outputdir,
             "project": pname,
             "theme": theme,
             "notify": pnotify,
-        }
+        },
     }
+
     print("Triggering jekyll build...")
     s.post('https://ci2.apache.org/api/v2/forceschedulers/jekyll_websites', json = payload)
     print("Done!")
 
 def pelican(cfg, yml):
     """ Pelican auto-build """
-    
+
     # Don't build from asf-site, like...ever
     ref = yml.get('refname', 'master').replace('refs/heads/', '')
     if ref == 'asf-site':
         print("Not auto-building from asf-site, ever...")
         return
-    
+
     # If whoami specified, ignore this payload if branch does not match
     # Unless autobuilding matches...
     whoami = yml.get('whoami')
@@ -202,27 +204,27 @@ def pelican(cfg, yml):
     do_autobuild = autobuild and fnmatch.fnmatch(ref, autobuild) and not ref.endswith('-staging')  # don't autobuild the autobuilt
     if whoami and whoami != ref and not do_autobuild:
         return
-    
+
     # Get target branch, if any, default to same branch or $branch-staging for autobuilds
     target = yml.get('target', ref)
     if do_autobuild:
         ref_bare = ref.replace(autobuild[:-1], '', 1) # site/foo -> foo
-        target = "%s/%s-staging" % ( autobuild[:-2], ref_bare)  # site/foo -> site/foo-staging
-    
+        target = f"{autobuild[:-2]}/{ref_bare}-staging"
+
     # Get optional theme
     theme = yml.get('theme', 'theme')
-    
+
     # infer project name
     m = re.match(r"(?:incubator-)?([^-.]+)", cfg.repo_name)
-    pname = m.group(1)
+    pname = m[1]
     pname = WSMAP.get(pname, pname)
-    
+
     # Get notification list
     pnotify = yml.get('notify', cfg.recips[0])
 
     # Get TOC boolean
     toc = yml.get('toc', True)
-    
+
     # Get minimum page count
     minpages = yml.get('minimum_page_count', 0)
     assert isinstance(minpages, int) and minpages >= 0, "minimum_page_count needs to be a positve integer!"
@@ -232,15 +234,15 @@ def pelican(cfg, yml):
     import requests
     s = requests.Session()
     s.get("https://ci2.apache.org/auth/login", auth= (bbusr, bbpwd))
-    
+
     payload = {
         "method": "force",
         "jsonrpc": "2.0",
-        "id":0,
-        "params":{
-            "reason": "Triggered pelican auto-build via .asf.yaml by %s" % cfg.committer,
+        "id": 0,
+        "params": {
+            "reason": f"Triggered pelican auto-build via .asf.yaml by {cfg.committer}",
             "builderid": "3",
-            "source": "https://gitbox.apache.org/repos/asf/%s.git" % cfg.repo_name,
+            "source": f"https://gitbox.apache.org/repos/asf/{cfg.repo_name}.git",
             "sourcebranch": ref,
             "outputbranch": target,
             "project": pname,
@@ -248,8 +250,9 @@ def pelican(cfg, yml):
             "notify": pnotify,
             "toc": toc,
             "minimum_page_count": "%u" % minpages,
-        }
+        },
     }
+
     print("Triggering pelican build...")
     s.post('https://ci2.apache.org/api/v2/forceschedulers/pelican_websites', json = payload)
     print("Done!")
@@ -257,33 +260,42 @@ def pelican(cfg, yml):
 GH_BRANCH_PROTECTION_URL_TPL = 'https://api.github.com/repos/apache/%s/branches/%s/protection'
 GH_BRANCH_PROTECTION_URL_ACCEPT = 'application/vnd.github.luke-cage-preview+json'
 
-def getEnabledProtectedBranchList (GH_TOKEN, repo_name, url, isLast):
-    if url:
-        REQ_URL = url
-    else:
-        REQ_URL = 'https://api.github.com/repos/apache/%s/branches?protected=true' % repo_name
-    headers = { "Authorization": "token %s" % GH_TOKEN }
+def getEnabledProtectedBranchList(GH_TOKEN, repo_name, url, isLast):
+    REQ_URL = (
+        url
+        or f'https://api.github.com/repos/apache/{repo_name}/branches?protected=true'
+    )
+
+    headers = {"Authorization": f"token {GH_TOKEN}"}
     response = requests.get(REQ_URL, headers=headers)
 
-    branchCollection = []
-    for branch in response.json():
-        branchCollection.append(branch.get("name"))
-
+    branchCollection = [branch.get("name") for branch in response.json()]
     if response.links and response.links.get("next") and not isLast:
         isLast = response.links["next"]["url"] == response.links["last"]["url"]
-        branchCollection = branchCollection + getEnabledProtectedBranchList(GH_TOKEN, repo_name, response.links["next"]["url"], isLast)
+        branchCollection += getEnabledProtectedBranchList(
+            GH_TOKEN, repo_name, response.links["next"]["url"], isLast
+        )
+
 
     return branchCollection
 
-def setProtectedBranch (GH_TOKEN, cfg, branch, required_status_checks, required_pull_request_reviews, required_linear_history):
+def setProtectedBranch(GH_TOKEN, cfg, branch, required_status_checks, required_pull_request_reviews, required_linear_history):
     REQ_URL = GH_BRANCH_PROTECTION_URL_TPL % (cfg.repo_name, branch)
-    response = requests.put(REQ_URL, headers = {'Accept': GH_BRANCH_PROTECTION_URL_ACCEPT, "Authorization": "token %s" % GH_TOKEN}, json = {
-        'enforce_admins': None,
-        'restrictions': None,
-        'required_status_checks': required_status_checks,
-        'required_pull_request_reviews': required_pull_request_reviews,
-        'required_linear_history': required_linear_history,
-    })
+    response = requests.put(
+        REQ_URL,
+        headers={
+            'Accept': GH_BRANCH_PROTECTION_URL_ACCEPT,
+            "Authorization": f"token {GH_TOKEN}",
+        },
+        json={
+            'enforce_admins': None,
+            'restrictions': None,
+            'required_status_checks': required_status_checks,
+            'required_pull_request_reviews': required_pull_request_reviews,
+            'required_linear_history': required_linear_history,
+        },
+    )
+
 
     if not (200 <= response.status_code < 300):
         js = response.json()
@@ -295,15 +307,15 @@ def setProtectedBranch (GH_TOKEN, cfg, branch, required_status_checks, required_
         )
 
     title = "Protected Branches"
-    message = "GitHub Protected Branches has been enabled on branch=%s" % (branch)
+    message = f"GitHub Protected Branches has been enabled on branch={branch}"
     print(message)
     notifiyPrivateMailingList(cfg, title, message)
 
     return response
 
-def removeProtectedBranch (GH_TOKEN, cfg, branch):
+def removeProtectedBranch(GH_TOKEN, cfg, branch):
     REQ_URL = GH_BRANCH_PROTECTION_URL_TPL % (cfg.repo_name, branch)
-    headers = {"Authorization": "token %s" % GH_TOKEN}
+    headers = {"Authorization": f"token {GH_TOKEN}"}
     response = requests.delete(REQ_URL, headers=headers)
 
     if not (200 <= response.status_code < 300):
@@ -316,24 +328,39 @@ def removeProtectedBranch (GH_TOKEN, cfg, branch):
         )
 
     title = "Protected Branches"
-    message = "GitHub Protected Branches has been be removed from branch=%s" % (branch)
+    message = f"GitHub Protected Branches has been be removed from branch={branch}"
     print(message)
     notifiyPrivateMailingList(cfg, title, message)
 
     return response
 
-def setProtectedBranchRequiredSignature (GH_TOKEN, cfg, pb_branch, required_signatures):
-    REQ_URL = 'https://api.github.com/repos/apache/%s/branches/%s/protection/required_signatures' % (cfg.repo_name, pb_branch)
+def setProtectedBranchRequiredSignature(GH_TOKEN, cfg, pb_branch, required_signatures):
+    REQ_URL = f'https://api.github.com/repos/apache/{cfg.repo_name}/branches/{pb_branch}/protection/required_signatures'
+
     ACCEPT_HEADER = 'application/vnd.github.zzzax-preview+json'
-    
+
     if type(required_signatures) is not bool:
         required_signatures = False
         print('The GitHub protected branch setting "required_signatures" contains an invalid value. It will be set to "False"')
 
     if required_signatures:
-        response = requests.post(REQ_URL, headers = {'Accept': ACCEPT_HEADER, "Authorization": "token %s" % GH_TOKEN})
+        response = requests.post(
+            REQ_URL,
+            headers={
+                'Accept': ACCEPT_HEADER,
+                "Authorization": f"token {GH_TOKEN}",
+            },
+        )
+
     else:
-        response = requests.delete(REQ_URL, headers = {'Accept': ACCEPT_HEADER, "Authorization": "token %s" % GH_TOKEN})
+        response = requests.delete(
+            REQ_URL,
+            headers={
+                'Accept': ACCEPT_HEADER,
+                "Authorization": f"token {GH_TOKEN}",
+            },
+        )
+
 
     if not (200 <= response.status_code < 300):
         js = response.json()
@@ -393,17 +420,18 @@ def formatProtectedBranchRequiredPullRequestReview(required_pull_request_reviews
 def notifiyPrivateMailingList(cfg, title, body):
     # infer project name
     m = re.match(r"(?:incubator-)?([^-.]+)", cfg.repo_name)
-    pname = m.group(1)
+    pname = m[1]
     pname = WSMAP.get(pname, pname)
 
     # Tell project what happened, on private@
     message = "The following changes were applied to %s by %s.\n\n%s\n\nWith regards,\nASF Infra.\n" % (cfg.repo_name, cfg.committer, body)
-    subject = "%s for %s.git has been updated" % (title, cfg.repo_name)
+    subject = f"{title} for {cfg.repo_name}.git has been updated"
     asfpy.messaging.mail(
         sender='GitBox <gitbox@apache.org>',
-        recipients=['private@%s.apache.org' % pname],
+        recipients=[f'private@{pname}.apache.org'],
         subject=subject,
-        message=message)
+        message=message,
+    )
 
 def github(cfg, yml):
     """ GitHub settings updated. Can set up description, web site and topics """

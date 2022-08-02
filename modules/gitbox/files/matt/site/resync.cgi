@@ -10,24 +10,23 @@ import cgi
 
 def listRepos():
     """ Return a list of all git-wip and gitbox repos """
-    repos = {}
-    # Get local gitbox repos
-    for repo in os.listdir("/x1/repos/asf"):
-        if '.git' in repo:
-            repos[repo] = 'gitbox'
-    
-    return repos
+    return {
+        repo: 'gitbox'
+        for repo in os.listdir("/x1/repos/asf")
+        if '.git' in repo
+    }
     
 
 # Fetch CGI payload
 xform = cgi.FieldStorage();
 
-reponame = xform.getvalue("repo")
-if reponame:
+if reponame := xform.getvalue("repo"):
     reponame = reponame.replace(".git", "")
     username = os.environ.get('REMOTE_USER', 'nobody')
     server = xform.getvalue("server", "git-wip-us")
-    requests.post("http://pubsub.apache.org:2069/git/%s/commit" % reponame, json = {
+    requests.post(
+        f"http://pubsub.apache.org:2069/git/{reponame}/commit",
+        json={
             'commit': {
                 "repository": "git",
                 "server": server,
@@ -36,13 +35,15 @@ if reponame:
                 "hash": "000000",
                 "sha": "0000000",
                 "author": username,
-                "email": "%s@apache.org" % username,
+                "email": f"{username}@apache.org",
                 "committer": "site-boop",
-                "body": "Manual re-synchronization triggered for %s by %s" % (reponame, username),
-                "log": "Manual re-synchronization triggered for %s by %s" % (reponame, username),
-                "files": []
+                "body": f"Manual re-synchronization triggered for {reponame} by {username}",
+                "log": f"Manual re-synchronization triggered for {reponame} by {username}",
+                "files": [],
             }
-    })
+        },
+    )
+
     print("Status: 201 Created\r\nContent-Type: text/plain\r\n\r\nWe've triggered a re-sync for %s!\r\n" % reponame)
 else:
     try:
@@ -52,7 +53,7 @@ else:
     except:
         repos = listRepos()
         json.dump(repos, open("/tmp/allrepos.json", "w"))
-    
+
     print("Status: 200 Okay\r\nContent-Type: text/html\r\n\r\n")
     print("<style>body { font-family: Sans-Serif;}</style>")
     print("<h2>Re-sync a repository (for GitHub and Web Sites):</h2>")

@@ -24,10 +24,10 @@ PARITION_SIZE=100 * 1024 * 1024
 tlps={}
 for files in os.listdir(ROOT):
     path = files
-    tlp = path[0:path.find('-')]
+    tlp = path[:path.find('-')]
     list = path[path.find('-')+1:]
     # print "%s - %s %s" % (tlp, list, path)
-    if not os.access("%s/%s/listinfo.db" % (ROOT, path), os.F_OK):
+    if not os.access(f"{ROOT}/{path}/listinfo.db", os.F_OK):
         continue
     if tlp == "www":
        tlp = "asf"
@@ -60,7 +60,7 @@ for tlp in keys:
             fp.write("<sitemap><loc>%s%s/?format=sitemap</loc></sitemap>\n" % (HOSTNAME, name))
         else:
             part = (size / PARITION_SIZE) + 1
-            for i in range(0, part):
+            for i in range(part):
                 count += 1
                 fp.write("<sitemap><loc>%s%s/?format=sitemap&amp;pmax=%d&amp;part=%d</loc></sitemap>\n" % (HOSTNAME, name, part, i))
         if count > 500:

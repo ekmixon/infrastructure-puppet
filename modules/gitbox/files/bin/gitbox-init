@@ -45,13 +45,13 @@ def main():
     if len(args) == 0:
         parser.error("Missing required GIT_DIR arguments.")
     if len(args) > 1:
-        parser.error("Unknown arguments: %s" % ", ".join(args[2:]))
+        parser.error(f'Unknown arguments: {", ".join(args[2:])}')
 
     git_dir = args[0]
     os.putenv("GIT_DIR", git_dir)
 
     if os.path.exists(git_dir):
-        error("Git directory exists: %s" % git_dir)
+        error(f"Git directory exists: {git_dir}")
 
     init_git(git_dir, opts.desc)
     configure_asfgit(git_dir, opts.commit)
@@ -82,7 +82,7 @@ def configure_asfgit(git_dir, commit):
         src = os.path.abspath(os.path.join(asfgit, "hooks", name))
         dst = os.path.join(git_dir, "hooks", name)
         if not os.path.exists(src):
-            error("Missing pre-receive hook: %s" % name)
+            error(f"Missing pre-receive hook: {name}")
         if os.path.exists(dst):
             os.unlink(dst)
         os.symlink(src, dst)
@@ -102,7 +102,7 @@ def configure_asfgit(git_dir, commit):
     if not added:
         # Get base config
         if not os.path.exists(cfgfile):
-            error("Missing default git configuration: %s" % cfgfile)
+            error(f"Missing default git configuration: {cfgfile}")
         with open(cfgfile) as handle:
             config = handle.read()
         git_repo = os.path.basename(git_dir)
@@ -111,7 +111,7 @@ def configure_asfgit(git_dir, commit):
         # Append the config data to the git config
         # and let the user review it.
         if not os.path.exists(dstfile):
-            error("Missing destination git config: %s" % dstfile)
+            error(f"Missing destination git config: {dstfile}")
         with open(dstfile, "a") as handle:
             handle.write(config)
 

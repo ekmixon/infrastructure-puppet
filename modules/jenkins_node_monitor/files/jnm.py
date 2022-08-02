@@ -21,5 +21,5 @@ for node in jenkinsNodes["computer"]:
     if (node["offline"]==False):
         host = node["displayName"]
         status = 0 # CheckStatus.OK
-    
+
     datadog.api.ServiceCheck.check(check=check, host_name=host, status=status, message=node["offlineCauseReason"])

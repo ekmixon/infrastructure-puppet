@@ -22,9 +22,9 @@ def has_feature(name):
 
 def get_yaml():
     committer = cfg.committer
-    blamemail = "%s@apache.org" % committer
+    blamemail = f"{committer}@apache.org"
     main_contact = DEFAULT_CONTACT or cfg.recips[0] #commits@project or whatever is set in git config?
-    
+
     # We just need the first line, as that has the branch affected:
     line = sys.stdin.readline().strip()
     if not line:
@@ -32,7 +32,10 @@ def get_yaml():
     [oldrev, newrev, refname] = line.split()
     try:
         FNULL = open(os.devnull, 'w')
-        ydata = subprocess.check_output(("/usr/bin/git", "show", "%s:.asf.yaml" % refname), stderr = FNULL)
+        ydata = subprocess.check_output(
+            ("/usr/bin/git", "show", f"{refname}:.asf.yaml"), stderr=FNULL
+        )
+
     except:
         ydata = ""
     if not ydata:
@@ -40,21 +43,25 @@ def get_yaml():
     try:
         config = yaml.safe_load(ydata)
     except yaml.YAMLError as e:
-        asfpy.messaging.mail(recipients = [blamemail, main_contact], subject = "Failed to parse .asf.yaml in %s.git!" % cfg.repo_name, message = str(e))
+        asfpy.messaging.mail(
+            recipients=[blamemail, main_contact],
+            subject=f"Failed to parse .asf.yaml in {cfg.repo_name}.git!",
+            message=str(e),
+        )
+
         return
-    
+
     if config:
-        
-        # Validate
-        errors = ""
-        for k in config:
-            if not has_feature(k):
-                errors += "Found unknown feature entry '%s' in .asf.yaml!\n" % k
-        if errors:
-            subject = "Failed to parse .asf.yaml in %s!" % cfg.repo_name
+
+        if errors := "".join(
+            "Found unknown feature entry '%s' in .asf.yaml!\n" % k
+            for k in config
+            if not has_feature(k)
+        ):
+            subject = f"Failed to parse .asf.yaml in {cfg.repo_name}!"
             asfpy.messaging.mail(recipients = [blamemail, main_contact], subject = subject, message = errors)
             return
-        
+
         # Run parts
         for k, v in config.iteritems():
             if type(v) is not dict:
@@ -66,7 +73,7 @@ def get_yaml():
             except Exception as e:
                 msg = "An error occurred while running %s feature in .asf.yaml!:\n%s" % (k, e)
                 print(msg)
-                subject = "Error while running %s feature from .asf.yaml in %s!" % (k, cfg.repo_name)
+                subject = f"Error while running {k} feature from .asf.yaml in {cfg.repo_name}!"
                 asfpy.messaging.mail(recipients = [blamemail, main_contact], subject = subject, message = msg)
 
 if __name__ == '__main__':        

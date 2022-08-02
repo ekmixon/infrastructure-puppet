@@ -77,12 +77,16 @@ class ProcessInfo(object):
         self.state = proc.status()
 
         self.conns = len(proc.connections())
-        self.conns_local = 0
-        for connection in proc.connections():
-            if connection.raddr and connection.raddr[0]:
-                if RE_LOCAL_IP.match(connection.raddr[0]) \
-                   or connection.raddr[0] == '::1':
-                    self.conns_local += 1
+        self.conns_local = sum(
+            1
+            for connection in proc.connections()
+            if connection.raddr
+            and connection.raddr[0]
+            and (
+                RE_LOCAL_IP.match(connection.raddr[0])
+                or connection.raddr[0] == '::1'
+            )
+        )
 
     def accumulate(self, other):
         self.mem += other.mem
@@ -125,7 +129,7 @@ def checkTriggers(id, info, triggers, dead = False):
     if len(triggers) > 0:
         print("  - Checking triggers:")
     for trigger, value in triggers.items():
-        print("    - Checking against trigger %s" % trigger)
+        print(f"    - Checking against trigger {trigger}")
 
         # maxmemory: Process can max use N amount of memory or it triggers
         if trigger == 'maxmemory':
@@ -176,7 +180,7 @@ def checkTriggers(id, info, triggers, dead = False):
             if ccons > maxconns:
                 print("    - Trigger fired!")
                 return lstr
-            
+
         # maxage: maximum age of a process (NOT cpu time)
         if trigger == 'maxage':
             if value.find('s') != -1:    # seconds
@@ -203,7 +207,7 @@ def checkTriggers(id, info, triggers, dead = False):
             if cage > maxage:
                 print("    - Trigger fired!")
                 return lstr
-        
+
         # state: kill processes in a specific state (zombie etc)
         if trigger == 'state':
             cstate = info.state
@@ -218,124 +222,117 @@ def scanForTriggers(config):
     procs = getprocs() # get all current processes
     actions = []
 
-    ### TODO: reindent
-    if True:
-
         # For each rule..
-        for id, rule in config['rules'].items():
-            print("- Running rule %s" % id)
-            # Is this process running here?
-            pids = []
-            if 'procid' in rule:
-                procid = rule['procid']
-                print("  - Checking for process %s" % procid)
-                for xpid, cmdline in procs.items():
+    for id, rule in config['rules'].items():
+        print(f"- Running rule {id}")
+        # Is this process running here?
+        pids = []
+        if 'procid' in rule:
+            procid = rule['procid']
+            print(f"  - Checking for process {procid}")
+            for xpid, cmdline in procs.items():
+                addit = False
+                if isinstance(procid, str):
+                    if rule['procid'] in " ".join(cmdline):
+                        addit = True
+                elif isinstance(procid, list):
+                    if cmdline == procid:
+                        addit = True
+                if addit:
+                    if 'ignore' not in rule:
+                        addit = True
+                    elif isinstance(rule['ignore'], str) and " ".join(cmdline) != rule['ignore']:
+                        addit = True
+                    elif isinstance(rule['ignore'], list) and cmdline != rule['ignore']:
+                        addit = True
+                    if 'ignorepidfile' in rule:
+                        try:
+                            ppid = int(open(rule['ignorepidfile']).read())
+                            if ppid == xpid:
+                                print("Ignoring %u, matches pid file %s!" % (ppid, rule['ignorepidfile']))
+                                addit = False
+                        except Exception as err:
+                            print(err)
+                if addit:
+                    pids.append(xpid)
+        if 'uid' in rule:
+            for xpid, cmdline in procs.items():
+                uid = getuser(xpid)
+                if uid == rule['uid']:
                     addit = False
-                    if isinstance(procid, str):
-                        if " ".join(cmdline).find(rule['procid']) != -1:
-                            addit = True
-                    elif isinstance(procid, list):
-                        if cmdline == procid:
-                            addit = True
+                    if 'ignore' not in rule:
+                        addit = True
+                    elif isinstance(rule['ignore'], str) and " ".join(cmdline) != rule['ignore']:
+                        addit = True
+                    elif isinstance(rule['ignore'], list) and cmdline != rule['ignore']:
+                        addit = True
+                    if 'ignorepidfile' in rule:
+                        try:
+                            ppid = int(open(rule['ignorepidfile']).read())
+                            if ppid == xpid:
+                                print("Ignoring %u, matches pid file %s!" % (ppid, rule['ignorepidfile']))
+                                addit = False
+                        except Exception as err:
+                            print(err)
                     if addit:
-                        if not ('ignore' in rule):
-                            addit = True
-                        elif isinstance(rule['ignore'], str) and " ".join(cmdline) != rule['ignore']:
-                            addit = True
-                        elif isinstance(rule['ignore'], list) and cmdline != rule['ignore']:
-                            addit = True
-                        if 'ignorepidfile' in rule:
-                            try:
-                                ppid = int(open(rule['ignorepidfile']).read())
-                                if ppid == xpid:
-                                    print("Ignoring %u, matches pid file %s!" % (ppid, rule['ignorepidfile']))
-                                    addit = False
-                            except Exception as err:
-                                print(err)
-                        if addit:
-                            pids.append(xpid)
-            if 'uid' in rule:
-                for xpid, cmdline in procs.items():
-                    uid = getuser(xpid)
-                    if uid == rule['uid']:
-                        addit = False
-                        if not ('ignore' in rule):
-                            addit = True
-                        elif isinstance(rule['ignore'], str) and " ".join(cmdline) != rule['ignore']:
-                            addit = True
-                        elif isinstance(rule['ignore'], list) and cmdline != rule['ignore']:
-                            addit = True
-                        if 'ignorepidfile' in rule:
-                            try:
-                                ppid = int(open(rule['ignorepidfile']).read())
-                                if ppid == xpid:
-                                    print("Ignoring %u, matches pid file %s!" % (ppid, rule['ignorepidfile']))
-                                    addit = False
-                            except Exception as err:
-                                print(err)
-                        if addit:
-                            pids.append(xpid)
+                        pids.append(xpid)
 
-            # If proc is running, analyze it
-            analysis = ProcessInfo()  # no pid. accumulator.
-            for pid in pids:
-                print("  - Found process at PID %u" % pid)
+        # If proc is running, analyze it
+        analysis = ProcessInfo()  # no pid. accumulator.
+        for pid in pids:
+            print("  - Found process at PID %u" % pid)
 
-                try:
-                    # Get all relevant data from this PID
-                    info = ProcessInfo(pid)
-    
+            try:
+                # Get all relevant data from this PID
+                info = ProcessInfo(pid)
+
                     # If combining, combine into the analysis hash
-                    if 'combine' in rule and rule['combine'] == True:
-                        analysis.accumulate(info)
-                    else:
-                        # If running a per-pid test, run it:
-                        err = checkTriggers(id, info, rule['triggers'])
-                        if err:
-                            action = {
-                                'pids': [],
-                                'trigger': "",
-                                'runlist': [],
-                                'notify': rule.get('notify', None),
-                                'kills': {}
-                            }
-                            if 'runlist' in rule and len(rule['runlist']) > 0:
-                                action['runlist'] = rule['runlist']
-                            if 'kill' in rule and rule['kill'] == True:
-                                sig = 9
-                                if 'killwith' in rule:
-                                    sig = int(rule['killwith'])
-                                action['kills'][pid] = sig
-                            action['trigger'] = err
-                            actions.append(action)
-                except:
-                    print("Could not analyze proc %u, bailing!" % pid)
-                    continue
-            if len(pids) > 0:
-                # If combined trigger test, run it now
                 if 'combine' in rule and rule['combine'] == True:
-                    err = checkTriggers(id, analysis, rule['triggers'])
-                    if err:
-                        action = {
-                            'pids': [],
-                            'trigger': "",
-                            'runlist': [],
-                            'notify': rule.get('notify', None),
-                            'kills': {}
-                        }
-                        if 'runlist' in rule and len(rule['runlist']) > 0:
-                            action['runlist'] = rule['runlist']
-                        if 'kill' in rule and rule['kill'] == True:
-                            sig = 9
-                            if 'killwith' in rule:
-                                sig = int(rule['killwith'])
-                            for ypid in pids:
-                                action['kills'][ypid] = sig
-                        action['trigger'] = err
-                        actions.append(action)
-            else:
-                print("  - No matching processes found")
-                
+                    analysis.accumulate(info)
+                elif err := checkTriggers(id, info, rule['triggers']):
+                    action = {
+                        'pids': [],
+                        'trigger': "",
+                        'runlist': [],
+                        'notify': rule.get('notify', None),
+                        'kills': {}
+                    }
+                    if 'runlist' in rule and len(rule['runlist']) > 0:
+                        action['runlist'] = rule['runlist']
+                    if 'kill' in rule and rule['kill'] == True:
+                        sig = 9
+                        if 'killwith' in rule:
+                            sig = int(rule['killwith'])
+                        action['kills'][pid] = sig
+                    action['trigger'] = err
+                    actions.append(action)
+            except:
+                print("Could not analyze proc %u, bailing!" % pid)
+                continue
+        if pids:
+                # If combined trigger test, run it now
+            if 'combine' in rule and rule['combine'] == True:
+                if err := checkTriggers(id, analysis, rule['triggers']):
+                    action = {
+                        'pids': [],
+                        'trigger': "",
+                        'runlist': [],
+                        'notify': rule.get('notify', None),
+                        'kills': {}
+                    }
+                    if 'runlist' in rule and len(rule['runlist']) > 0:
+                        action['runlist'] = rule['runlist']
+                    if 'kill' in rule and rule['kill'] == True:
+                        sig = 9
+                        if 'killwith' in rule:
+                            sig = int(rule['killwith'])
+                        for ypid in pids:
+                            action['kills'][ypid] = sig
+                    action['trigger'] = err
+                    actions.append(action)
+        else:
+            print("  - No matching processes found")
+
     return actions
 
 
@@ -349,93 +346,89 @@ parser.add_argument("-r", "--restart", help="Restart the Kif daemon", action = '
 parser.add_argument("-c", "--config", help="Path to the config file if not in ./kif.yaml")
 args = parser.parse_args()
 
-if not args.config:
-    CONFIG = yaml.load(open("kif.yaml"))
-else:
-    CONFIG = yaml.load(open(args.config))
+CONFIG = (
+    yaml.load(open(args.config))
+    if args.config
+    else yaml.load(open("kif.yaml"))
+)
 
 def main(config):
     if 'rules' not in config:
         print('- NO RULES TO CHECK')
-    else:
-        # Now actually run things
-        actions = scanForTriggers(config)
-        if actions:
-            run_actions(config, actions)
+    elif actions := scanForTriggers(config):
+        run_actions(config, actions)
 
     print('KIF run finished!')
 
 
 def run_actions(config, actions):
-        ### TODO: reindent
+    ### TODO: reindent
 
-        goods = 0
-        bads = 0
-        triggered_total = 0
-        email_triggers = ""
-        email_actions = ""
-        
-        for action in actions:
-            triggered_total += 1
-            print("Following triggers were detected:")
-            print("- %s" % action['trigger'])
+    goods = 0
+    bads = 0
+    email_triggers = ""
+    email_actions = ""
+
+    for action in actions:
+        print("Following triggers were detected:")
+        print(f"- {action['trigger']}")
+        if action.get('notify', 'email') in [None, 'email']:
+            email_triggers += "- %s\n" % action['trigger']
+        print("Running triggered commands:")
+        rloutput = ""
+        for item in action['runlist']:
+            print(f"- {item}")
+            rloutput += f"- {item}"
             if action.get('notify', 'email') in [None, 'email']:
-                email_triggers += "- %s\n" % action['trigger']
-            print("Running triggered commands:")
-            rloutput = ""
-            for item in action['runlist']:
-                print("- %s" % item)
-                rloutput += "- %s" % item
-                if action.get('notify', 'email') in [None, 'email']:
-                    email_actions += "- %s" % item
-                try:
-                    if not args.debug:
-                        subprocess.check_output(item, shell = True, stderr=subprocess.STDOUT)
-                        rloutput += " (success)"
-                        if action.get('notify', 'email') in [None, 'email']:
-                            email_actions += " (success)"
-                    else:
-                        print("(disabled due to --debug flag)")
-                        rloutput += " (disabled due to --debug)"
-                        if action.get('notify', 'email') in [None, 'email']:
-                            email_actions += " (disabled due to --debug)"
-                    goods += 1
-                except subprocess.CalledProcessError as e:
-                    print("command failed: %s" % e.output)
-                    rloutput += " (failed!: %s)" % e.output
-                    if action.get('notify', 'email') in [None, 'email']:
-                        email_actions += " (failed!: %s)" % e.output
-                    bads += 1
-                rloutput += "\n"
-                if action.get('notify', 'email') in [None, 'email']:
-                    email_actions += "\n"
-            for pid, sig in action['kills'].items():
-                print("- KILL PID %u with sig %u" % (pid, sig))
-                rloutput += "- KILL PID %u with sig %u" % (pid, sig)
-                if action.get('notify', 'email') in [None, 'email']:
-                    email_actions += "- KILL PID %u with sig %u" % (pid, sig)
+                email_actions += f"- {item}"
+            try:
                 if not args.debug:
-                    try:
-                        os.kill(pid, sig)
-                    except OSError:
-                        email_actions += "(failed, no such process!)"
-                else:
-                    print(" (disabled due to --debug flag)")
-                    rloutput += " (disabled due to --debug flag)"
+                    subprocess.check_output(item, shell = True, stderr=subprocess.STDOUT)
+                    rloutput += " (success)"
                     if action.get('notify', 'email') in [None, 'email']:
-                        email_actions += " (disabled due to --debug flag)"
-                rloutput += "\n"
-                if action.get('notify', 'email') in [None, 'email']:
-                    email_actions += "\n"
+                        email_actions += " (success)"
+                else:
+                    print("(disabled due to --debug flag)")
+                    rloutput += " (disabled due to --debug)"
+                    if action.get('notify', 'email') in [None, 'email']:
+                        email_actions += " (disabled due to --debug)"
                 goods += 1
-            print("%u calls succeeded, %u failed." % (goods, bads))
+            except subprocess.CalledProcessError as e:
+                print(f"command failed: {e.output}")
+                rloutput += f" (failed!: {e.output})"
+                if action.get('notify', 'email') in [None, 'email']:
+                    email_actions += f" (failed!: {e.output})"
+                bads += 1
+            rloutput += "\n"
+            if action.get('notify', 'email') in [None, 'email']:
+                email_actions += "\n"
+        for pid, sig in action['kills'].items():
+            print("- KILL PID %u with sig %u" % (pid, sig))
+            rloutput += "- KILL PID %u with sig %u" % (pid, sig)
+            if action.get('notify', 'email') in [None, 'email']:
+                email_actions += "- KILL PID %u with sig %u" % (pid, sig)
+            if not args.debug:
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    email_actions += "(failed, no such process!)"
+            else:
+                print(" (disabled due to --debug flag)")
+                rloutput += " (disabled due to --debug flag)"
+                if action.get('notify', 'email') in [None, 'email']:
+                    email_actions += " (disabled due to --debug flag)"
+            rloutput += "\n"
+            if action.get('notify', 'email') in [None, 'email']:
+                email_actions += "\n"
+            goods += 1
+        print("%u calls succeeded, %u failed." % (goods, bads))
 
-        if email_actions and 'notifications' in config and 'email' in config['notifications']:
-            ecfg = config['notifications']['email']
-            if 'rcpt' in ecfg and 'from' in ecfg:
-                subject = "[KIF] events triggered on %s"  % ME
-                msg = TEMPLATE_EMAIL % (ME, email_triggers, email_actions)
-                notifyEmail(ecfg['from'], ecfg['rcpt'], subject, msg)
+    if email_actions and 'notifications' in config and 'email' in config['notifications']:
+        ecfg = config['notifications']['email']
+        if 'rcpt' in ecfg and 'from' in ecfg:
+            subject = f"[KIF] events triggered on {ME}"
+            msg = TEMPLATE_EMAIL % (ME, email_triggers, email_actions)
+            notifyEmail(ecfg['from'], ecfg['rcpt'], subject, msg)
 
 TEMPLATE_EMAIL = """Hullo there,
 
@@ -552,7 +545,7 @@ class Daemonize:
 
         if not pid:
             message = "pidfile {0} does not exist. " + \
-                            "Daemon not running?\n"
+                                "Daemon not running?\n"
             sys.stderr.write(message.format(self.pidfile))
             return # not an error in a restart
 
@@ -567,7 +560,7 @@ class Daemonize:
                 if os.path.exists(self.pidfile):
                     os.remove(self.pidfile)
             else:
-                print (str(err.args))
+                print(err.args)
                 sys.exit(1)
 
     def restart(self):
@@ -623,16 +616,15 @@ elif args.restart:
     print("Restarting Kif")
     daemon = MyDaemon(PIDFILE)
     daemon.restart()
-else:
-    if args.daemonize:
-        print("Daemonizing Kif, using %s..." % PIDFILE)
-        daemon = MyDaemon(PIDFILE)
-        daemon.start(args)
-    elif args.foreground:
-        interval = int(CONFIG.get('daemon', { })
-                       .get('interval', DEFAULT_INTERVAL))
-        while True:
-            main(CONFIG)
-            time.sleep(interval)
-    else:
+elif args.daemonize:
+    print(f"Daemonizing Kif, using {PIDFILE}...")
+    daemon = MyDaemon(PIDFILE)
+    daemon.start(args)
+elif args.foreground:
+    interval = int(CONFIG.get('daemon', { })
+                   .get('interval', DEFAULT_INTERVAL))
+    while True:
         main(CONFIG)
+        time.sleep(interval)
+else:
+    main(CONFIG)

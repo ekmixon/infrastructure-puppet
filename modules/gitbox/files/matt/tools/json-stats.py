@@ -40,32 +40,28 @@ def getGitHubRepos():
         # Break if no more repos
         if len(data) == 0:
             break
-        for repo in data:
-            repos.append(repo['name'])
+        repos.extend(repo['name'] for repo in data)
     return sorted(repos)
 
 def getClones(repo):
     """ Fetches all clone stats """
     repos = []
-    url = "https://api.github.com/repos/apache/%s/traffic/clones?per=day&" % repo
-    data = requests.get(url, auth = ('asf-gitbox', ORG_READ_TOKEN)).json()
-    return data
+    url = f"https://api.github.com/repos/apache/{repo}/traffic/clones?per=day&"
+    return requests.get(url, auth = ('asf-gitbox', ORG_READ_TOKEN)).json()
 
 def getViews(repo):
     """ Fetches all view stats """
     repos = []
-    url = "https://api.github.com/repos/apache/%s/traffic/views?per=day&" % repo
-    data = requests.get(url, auth = ('asf-gitbox', ORG_READ_TOKEN)).json()
-    return data
+    url = f"https://api.github.com/repos/apache/{repo}/traffic/views?per=day&"
+    return requests.get(url, auth = ('asf-gitbox', ORG_READ_TOKEN)).json()
 
 
 for repo in getGitHubRepos():
-    print("Fetching data for %s" % repo)
-    js = {}
-    js['clones'] = getClones(repo)
+    print(f"Fetching data for {repo}")
+    js = {'clones': getClones(repo)}
     js['views'] = getViews(repo)
-    with open("/x1/gitbox/htdocs/stats/%s.json" % repo, "w") as f:
+    with open(f"/x1/gitbox/htdocs/stats/{repo}.json", "w") as f:
         json.dump(js, f, indent = 4)
         f.close()
-        
+
 print("All done!")

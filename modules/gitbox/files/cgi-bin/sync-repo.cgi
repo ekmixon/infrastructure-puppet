@@ -27,21 +27,14 @@ xform = cgi.FieldStorage();
 from netaddr import IPNetwork, IPAddress
 GitHubNetworks = [IPNetwork("185.199.108.0/22"), IPNetwork("192.30.252.0/22"), IPNetwork("140.82.112.0/20")]
 callerIP = IPAddress(os.environ['REMOTE_ADDR'])
-authed = False
-for block in GitHubNetworks:
-    if callerIP in block:
-        authed = True
+authed = any(callerIP in block for block in GitHubNetworks)
 if not authed:
     print("Status: 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nI don't know you!\r\n")
     sys.exit(0)
 
 
 def getvalue(key):
-    val = xform.getvalue(key)
-    if val:
-        return val
-    else:
-        return None
+    return val if (val := xform.getvalue(key)) else None
 
 jsin = getvalue('payload')
 data = json.loads(jsin)

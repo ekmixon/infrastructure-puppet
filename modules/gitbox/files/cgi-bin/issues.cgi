@@ -42,10 +42,7 @@ xform = cgi.FieldStorage();
 from netaddr import IPNetwork, IPAddress
 GitHubNetworks = [IPNetwork("185.199.108.0/22"), IPNetwork("192.30.252.0/22"), IPNetwork("140.82.112.0/20")]
 callerIP = IPAddress(os.environ['REMOTE_ADDR'])
-authed = False
-for block in GitHubNetworks:
-    if callerIP in block:
-        authed = True
+authed = any(callerIP in block for block in GitHubNetworks)
 if not authed:
     print("Status: 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nI don't know you!\r\n")
     sys.exit(0)
@@ -53,11 +50,7 @@ if not authed:
 
 ### Helper functions ###
 def getvalue(key):
-    val = xform.getvalue(key)
-    if val:
-        return val
-    else:
-        return None
+    return val if (val := xform.getvalue(key)) else None
 
 ################################
 # Message formatting functions #
@@ -71,11 +64,8 @@ def get_type(payload):
     return 'issue'
 
 def issueOpened(payload):
-    fmt = {}
     obj = payload['pull_request'] if 'pull_request' in payload else payload['issue']
-    fmt['user'] = obj['user']['login']
-    # PR or issue??
-    fmt['type'] = get_type(payload)
+    fmt = {'user': obj['user']['login'], 'type': get_type(payload)}
     fmt['node_id'] = obj['node_id'] # Stable global issue/pr id
     fmt['id'] = obj['number']
     fmt['text'] = obj['body']
@@ -85,11 +75,14 @@ def issueOpened(payload):
     return fmt
 
 def issueClosed(payload, ml = "foo@bar"):
-    fmt = {}
     obj = payload['pull_request'] if 'pull_request' in payload else payload['issue']
-    fmt['user'] = payload['sender']['login'] if 'sender' in payload else obj['user']['login']
-    # PR or issue??
-    fmt['type'] = get_type(payload)
+    fmt = {
+        'user': payload['sender']['login']
+        if 'sender' in payload
+        else obj['user']['login'],
+        'type': get_type(payload),
+    }
+
     fmt['id'] = obj['number']
     fmt['node_id'] = obj['node_id']
     fmt['text'] = "" # empty line when closing, so as to not confuse
@@ -101,34 +94,31 @@ def issueClosed(payload, ml = "foo@bar"):
         fmt['action'] = 'merge'
     # If foreign diff, we have to pull it down here
     # TEMPORARILY DISABLED
-    if False and obj.get('head') and obj['head'].get('repo') and obj['head']['repo'].get('full_name') and obj.get('diff_url'):
-        if not obj['head']['repo']['full_name'].startswith("apache/"):
-            txt = requests.get(obj['diff_url']).text
-            addendum = None
-            # No greater than 5MB or 20,000 lines, whichever comes first.
-            if len(txt) > 5000000:
-                txt = txt[:5000000]
-                addendum = "This diff was greater than 5MB in size, and has been truncated"
-            lines = txt.split("\n")
-            if len(lines) > 20000:
-                txt = "\n".join(lines[:20000])
-                addendum = "This diff was longer than 20,000 lines, and has been truncated"
-            if addendum:
-                txt += "\n\n  (%s...)\n" % addendum
-            fmt['prdiff'] = """
+    if False and not obj['head']['repo']['full_name'].startswith("apache/"):
+        txt = requests.get(obj['diff_url']).text
+        addendum = None
+        # No greater than 5MB or 20,000 lines, whichever comes first.
+        if len(txt) > 5000000:
+            txt = txt[:5000000]
+            addendum = "This diff was greater than 5MB in size, and has been truncated"
+        lines = txt.split("\n")
+        if len(lines) > 20000:
+            txt = "\n".join(lines[:20000])
+            addendum = "This diff was longer than 20,000 lines, and has been truncated"
+        if addendum:
+            txt += "\n\n  (%s...)\n" % addendum
+        fmt['prdiff'] = """
 As this is a foreign pull request (from a fork), the diff has been
 sent to your commit mailing list, %s
 """ % ml
-            fmt['prdiff_real'] = txt
+        fmt['prdiff_real'] = txt
     return fmt
 
 
 def ticketComment(payload):
-    fmt = {}
     obj = payload['pull_request'] if 'pull_request' in payload else payload['issue']
     comment = payload['comment']
-    # PR or issue??
-    fmt['type'] = get_type(payload)
+    fmt = {'type': get_type(payload)}
     # This is different from open/close payloads!
     fmt['user'] = comment['user']['login']
     fmt['id'] = obj['number']
@@ -141,11 +131,9 @@ def ticketComment(payload):
 
 
 def reviewComment(payload):
-    fmt = {}
     obj = payload['pull_request'] if 'pull_request' in payload else payload['issue']
     comment = payload['comment']
-    # PR or issue??
-    fmt['type'] = get_type(payload)
+    fmt = {'type': get_type(payload)}
     fmt['user'] = comment['user']['login']
     fmt['id'] = obj['number']
     fmt['node_id'] = obj['node_id']
@@ -168,15 +156,15 @@ def formatMessage(fmt, template = 'template.ezt'):
         'deleted':      "removed a comment on %(type)s",
         'diffcomment':  "commented on a change in %(type)s"
     }
-    fmt['action'] = (subjects[fmt['action']] if fmt['action'] in subjects else subjects['comment']) % fmt
+    fmt['action'] = subjects.get(fmt['action'], subjects['comment']) % fmt
     fmt['subject'] = "%(user)s %(action)s #%(id)i: %(title)s" % fmt
     template = ezt.Template(template)
     fp = StringIO.StringIO()
     output = template.generate(fp, fmt)
     body = fp.getvalue()
     return {
-        'subject': "[GitHub] [%s] %s" % (fmt['repo'], fmt['subject']), # Append [GitHub] for mail filters
-        'message': body
+        'subject': f"[GitHub] [{fmt['repo']}] {fmt['subject']}",
+        'message': body,
     }
 
 
@@ -191,7 +179,7 @@ def main():
     if 'repository' in data:
         repo = data['repository']['name']
         for rpath in REPO_PATHS:
-            xrepopath = "%s/%s.git" % (rpath, repo)
+            xrepopath = f"{rpath}/{repo}.git"
             if os.path.exists(xrepopath):
                 repopath = xrepopath
                 break
@@ -199,7 +187,7 @@ def main():
         return None
     if not os.path.exists(repopath):
         return None
-    
+
     # Now figure out what type of event we got
     fmt = None
     email = None
@@ -211,10 +199,8 @@ def main():
             fmt = issueOpened(data)
         if data['action'] == 'opened':
             isNew = True
-        # Issue closed
         elif data['action'] == 'closed':
             fmt = issueClosed(data, commitml)
-        # Comment on issue or specific code (WIP)
         elif 'comment' in data:
             isComment = True
             # File-specific comment
@@ -222,37 +208,32 @@ def main():
                 # Diff review
                 if 'diff_hunk' in data['comment']:
                     fmt = reviewComment(data)
-            # Standard commit comment
-            elif 'commit_id' in data['comment']:
-                # We don't quite handle this yet
-                pass
-            # Generic comment
-            else:
+            elif 'commit_id' not in data['comment']:
                 fmt = ticketComment(data)
 
     # Send pubsub event
     if fmt:
         fmt['repo'] = repo
         for el in ['filename','diff', 'prdiff']:
-            if not el in fmt:
+            if el not in fmt:
                 fmt[el] = None
         # Indent comment
-        fmt['text'] = "\n".join("   %s" % x for x in fmt['text'].split("\n"))
-        
-        m = re.match(r"(?:incubator-)([^-]+)", repo)
-        project = "infra" # Default to infra
-        if m:
-            project = m.group(1)
-        
+        fmt['text'] = "\n".join(f"   {x}" for x in fmt['text'].split("\n"))
+
+        project = m[1] if (m := re.match(r"(?:incubator-)([^-]+)", repo)) else "infra"
         # Push even to pubsub
         act = fmt.get('type', 'issue')
         if act == 'pull request':
             act = 'pr'
         try:
-            requests.post('http://pubsub.apache.org:2069/github/%s/%s/%s.git/%s' % (act, project, repo, fmt.get('action', 'unknown')), data = json.dumps({"payload": fmt}))
+            requests.post(
+                f"http://pubsub.apache.org:2069/github/{act}/{project}/{repo}.git/{fmt.get('action', 'unknown')}",
+                data=json.dumps({"payload": fmt}),
+            )
+
         except:
             pass
-    
+
     # All done!
     return None
 
